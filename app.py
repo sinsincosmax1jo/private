@@ -18,12 +18,15 @@ import os
 import re
 import json
 import base64
+from io import BytesIO
 from datetime import date
 
 import streamlit as st
 import anthropic
+from PIL import Image
 
 MODEL_NAME = "claude-sonnet-5"
+LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clozkin_logo.png")
 
 # ---------------------------------------------------------------------------
 # 우리 동네 피부 랭킹 - 목업 데이터 (실제 서비스에서는 DB에서 조회)
@@ -64,6 +67,19 @@ def get_api_key() -> str | None:
 @st.cache_resource(show_spinner=False)
 def get_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
+
+
+@st.cache_data(show_spinner=False)
+def logo_data_uri(size: int = 320) -> str | None:
+    """브랜드 로고를 축소해 data URI 로 반환 (없으면 None)."""
+    try:
+        img = Image.open(LOGO_PATH).convert("RGBA")
+    except (OSError, FileNotFoundError):
+        return None
+    img.thumbnail((size, size), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def _extract_json(text: str) -> dict:
@@ -174,19 +190,27 @@ CUSTOM_CSS = """
 #MainMenu, header, footer { visibility: hidden; }
 
 /* ---- 브랜드 / 히어로 ---- */
-.cl-brand { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
+.cl-logo-wrap { display: flex; justify-content: center; margin: 2px 0 0; }
+.cl-logo { width: 120px; height: 120px; object-fit: contain; border-radius: 30px;
+  background: #fbfdfd; padding: 15px;
+  box-shadow: 0 16px 46px rgba(67, 211, 176, 0.20), 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.cl-badge-tag { text-align: center; font-family: 'Space Grotesk', monospace; font-size: 10.5px;
+  letter-spacing: 3px; color: var(--muted); font-weight: 600; margin: 14px 0 0; }
+
+/* 로고 로드 실패 시 텍스트 폴백 */
+.cl-brand { display: flex; align-items: center; justify-content: center; gap: 9px; margin-bottom: 4px; }
 .cl-brand__dot { width: 9px; height: 9px; border-radius: 50%;
   background: var(--accent); box-shadow: 0 0 14px var(--accent), 0 0 4px var(--accent); }
 .cl-brand__name { font-size: 19px; font-weight: 800; letter-spacing: -0.4px; }
-.cl-brand__tag { font-family: 'Space Grotesk', monospace; font-size: 10.5px;
-  letter-spacing: 2.5px; color: var(--muted); font-weight: 600; margin-left: 2px; }
 
-.cl-hero__title { font-size: 40px; line-height: 1.14; font-weight: 800;
-  letter-spacing: -1.4px; margin: 26px 0 16px; }
+.cl-hero__title { text-align: center; font-size: 38px; line-height: 1.16; font-weight: 800;
+  letter-spacing: -1.4px; margin: 22px 0 14px; }
 .cl-grad { background: linear-gradient(115deg, var(--accent-2), var(--accent));
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-.cl-hero__sub { color: var(--muted); font-size: 15px; line-height: 1.65; margin: 0 0 22px; }
+.cl-hero__sub { text-align: center; color: var(--muted); font-size: 15px; line-height: 1.65;
+  margin: 0 auto 24px; max-width: 400px; }
 
+.cl-status-wrap { text-align: center; }
 .cl-status { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 26px;
   padding: 9px 15px; border-radius: 999px; background: var(--glass);
   border: 1px solid var(--glass-brd); font-size: 13px; color: var(--text); }
@@ -329,12 +353,21 @@ def nav_card(idx: str, tag: str, title: str, desc: str, target: str) -> None:
 
 
 def render_home() -> None:
-    st.markdown(
-        '<div class="cl-brand"><span class="cl-brand__dot"></span>'
-        '<span class="cl-brand__name">clozkin</span>'
-        '<span class="cl-brand__tag">AI BEAUTY GUIDE</span></div>',
-        unsafe_allow_html=True,
-    )
+    uri = logo_data_uri()
+    if uri:
+        st.markdown(
+            f'<div class="cl-logo-wrap"><img class="cl-logo" src="{uri}" alt="clozkin"></div>'
+            '<p class="cl-badge-tag">AI BEAUTY GUIDE</p>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="cl-brand"><span class="cl-brand__dot"></span>'
+            '<span class="cl-brand__name">clozkin</span></div>'
+            '<p class="cl-badge-tag">AI BEAUTY GUIDE</p>',
+            unsafe_allow_html=True,
+        )
+
     st.markdown(
         '<h1 class="cl-hero__title">세안 다음은,<br>'
         '<span class="cl-grad">당연히 스킨케어.</span></h1>',
@@ -349,7 +382,8 @@ def render_home() -> None:
     diagnosis = st.session_state.get("last_diagnosis")
     if diagnosis and diagnosis.get("summary"):
         st.markdown(
-            f'<div class="cl-status"><b>최근 진단</b> · {diagnosis["summary"]}</div>',
+            f'<div class="cl-status-wrap"><div class="cl-status">'
+            f'<b>최근 진단</b> · {diagnosis["summary"]}</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -523,7 +557,8 @@ def render_event(client: anthropic.Anthropic | None) -> None:
 # 엔트리포인트
 # ---------------------------------------------------------------------------
 def main() -> None:
-    st.set_page_config(page_title="clozkin", page_icon="◎", layout="centered")
+    page_icon = LOGO_PATH if os.path.exists(LOGO_PATH) else "◎"
+    st.set_page_config(page_title="clozkin", page_icon=page_icon, layout="centered")
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
     if "screen" not in st.session_state:
