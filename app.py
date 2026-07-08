@@ -142,58 +142,156 @@ def generate_routine(client: anthropic.Anthropic, event_label: str, days_left: i
 
 
 # ---------------------------------------------------------------------------
-# 스타일 (모바일 앱 느낌의 다크 테마 유지)
+# 스타일 - 미니멀 / 미래지향 다크 (글래스모피즘 + 그라디언트 글로우)
 # ---------------------------------------------------------------------------
 CUSTOM_CSS = """
 <style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap');
+
 :root {
   --accent: #43d3b0;
-  --accent-dim: rgba(67, 211, 176, 0.16);
-  --surface: #383d43;
-  --base-deep: #24272b;
-  --text-muted: #9aa1a8;
+  --accent-2: #5eead4;
+  --accent-dim: rgba(67, 211, 176, 0.14);
+  --glass: rgba(255, 255, 255, 0.045);
+  --glass-brd: rgba(255, 255, 255, 0.09);
+  --text: #eef2f4;
+  --muted: #8b949e;
+  --ink: #06231d;
 }
-.block-container { max-width: 520px; padding-top: 1.5rem; }
+
+.stApp {
+  background:
+    radial-gradient(1100px 560px at 50% -12%, rgba(67, 211, 176, 0.13), transparent 60%),
+    radial-gradient(900px 500px at 110% 8%, rgba(94, 234, 212, 0.06), transparent 55%),
+    linear-gradient(180deg, #0b0e13 0%, #070a0e 100%);
+}
+.stApp, .stApp p, .stApp span, .stApp div, .stApp h1, .stApp h2, .stApp h3, .stApp label {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--text);
+}
+.block-container { max-width: 560px; padding-top: 2.2rem; padding-bottom: 4rem; }
 #MainMenu, header, footer { visibility: hidden; }
 
-.cl-wordmark { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; margin: 0 0 4px; }
-.cl-sub { color: var(--text-muted); font-size: 14px; margin: 0 0 20px; }
+/* ---- 브랜드 / 히어로 ---- */
+.cl-brand { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
+.cl-brand__dot { width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 14px var(--accent), 0 0 4px var(--accent); }
+.cl-brand__name { font-size: 19px; font-weight: 800; letter-spacing: -0.4px; }
+.cl-brand__tag { font-family: 'Space Grotesk', monospace; font-size: 10.5px;
+  letter-spacing: 2.5px; color: var(--muted); font-weight: 600; margin-left: 2px; }
 
-.cl-banner { background: var(--surface); border-radius: 20px; padding: 20px; margin-bottom: 22px; }
-.cl-banner__label { color: var(--accent); font-size: 13px; font-weight: 700; margin: 0 0 6px; }
-.cl-banner__text { font-size: 16px; font-weight: 600; margin: 0; }
+.cl-hero__title { font-size: 40px; line-height: 1.14; font-weight: 800;
+  letter-spacing: -1.4px; margin: 26px 0 16px; }
+.cl-grad { background: linear-gradient(115deg, var(--accent-2), var(--accent));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.cl-hero__sub { color: var(--muted); font-size: 15px; line-height: 1.65; margin: 0 0 22px; }
 
-.cl-result { background: var(--surface); border-radius: 20px; padding: 24px; text-align: center; }
-.cl-result__label { color: var(--text-muted); font-size: 13px; margin: 0; }
-.cl-result__score { color: var(--accent); font-size: 48px; font-weight: 800; margin: 4px 0 2px; }
-.cl-result__type { color: var(--text-muted); font-size: 14px; font-weight: 600; margin: 0 0 10px; }
-.cl-result__summary { font-size: 15px; line-height: 1.5; margin: 0 0 16px; }
+.cl-status { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 26px;
+  padding: 9px 15px; border-radius: 999px; background: var(--glass);
+  border: 1px solid var(--glass-brd); font-size: 13px; color: var(--text); }
+.cl-status b { color: var(--accent); font-weight: 700; }
+
+/* ---- 홈 네비게이션 카드 (컨테이너 위에 투명 버튼 오버레이) ---- */
+[class*="st-key-navcard_"] { position: relative; margin-bottom: 14px; }
+.cl-nav {
+  position: relative; border-radius: 22px; padding: 22px 22px 46px;
+  background: var(--glass); border: 1px solid var(--glass-brd);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  overflow: hidden; transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.cl-nav::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(94, 234, 212, 0.5), transparent); }
+.cl-nav__top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.cl-nav__idx { font-family: 'Space Grotesk', monospace; font-size: 12px; font-weight: 700;
+  color: var(--accent); letter-spacing: 1px; }
+.cl-nav__tag { font-family: 'Space Grotesk', monospace; font-size: 10px; letter-spacing: 2.5px;
+  color: var(--muted); text-transform: uppercase; }
+.cl-nav__title { font-size: 21px; font-weight: 800; letter-spacing: -0.6px; margin-bottom: 7px; }
+.cl-nav__desc { font-size: 13px; color: var(--muted); line-height: 1.55; max-width: 84%; }
+.cl-nav__arrow { position: absolute; right: 22px; bottom: 18px; color: var(--accent);
+  font-size: 17px; transition: transform 0.25s ease; }
+
+[class*="st-key-navcard_"]:hover .cl-nav {
+  transform: translateY(-2px); border-color: rgba(67, 211, 176, 0.5);
+  box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.2), 0 16px 44px rgba(67, 211, 176, 0.12);
+}
+[class*="st-key-navcard_"]:hover .cl-nav__arrow { transform: translateX(4px); }
+
+/* 카드 전체를 덮는 투명 클릭 레이어 */
+[class*="st-key-navcard_"] .stButton { position: absolute; inset: 0; margin: 0; z-index: 4; }
+[class*="st-key-navcard_"] .stButton > button { width: 100%; height: 100%; opacity: 0; border: 0; }
+
+/* ---- 일반 버튼 ---- */
+.stButton > button {
+  border-radius: 14px; font-weight: 700; letter-spacing: -0.2px;
+  border: 1px solid var(--glass-brd); background: var(--glass); color: var(--text);
+  transition: border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.stButton > button:hover { border-color: var(--accent); color: var(--accent); }
+.stButton > button[kind="primary"] {
+  background: linear-gradient(115deg, var(--accent-2), var(--accent)); color: var(--ink);
+  border: 0; box-shadow: 0 10px 34px rgba(67, 211, 176, 0.28);
+}
+.stButton > button[kind="primary"]:hover { color: var(--ink); filter: brightness(1.05); }
+
+.st-key-back { margin-bottom: 6px; }
+.st-key-back .stButton > button { width: auto; background: transparent; border: 0;
+  color: var(--muted); padding: 2px 2px; font-weight: 600; }
+.st-key-back .stButton > button:hover { color: var(--accent); }
+
+/* ---- 공통 섹션 제목 ---- */
+.cl-h { font-size: 24px; font-weight: 800; letter-spacing: -0.7px; margin: 2px 0 4px; }
+.cl-sec { font-family: 'Space Grotesk', monospace; font-size: 11px; letter-spacing: 2px;
+  color: var(--muted); text-transform: uppercase; margin: 22px 0 12px; }
+
+/* ---- 진단 결과 ---- */
+.cl-result { background: var(--glass); border: 1px solid var(--glass-brd); backdrop-filter: blur(16px);
+  border-radius: 24px; padding: 28px 24px; text-align: center; margin-top: 8px; }
+.cl-result__label { color: var(--muted); font-size: 12px; letter-spacing: 1px; margin: 0; }
+.cl-result__score { font-size: 62px; font-weight: 800; letter-spacing: -2px; margin: 2px 0;
+  background: linear-gradient(115deg, var(--accent-2), var(--accent));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.cl-result__type { color: var(--muted); font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+.cl-result__summary { font-size: 15px; line-height: 1.55; margin: 0 0 18px; }
 .cl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 8px; }
-.cl-chips span { background: var(--base-deep); font-size: 12px; padding: 6px 12px; border-radius: 999px; }
-.cl-chips--accent span { background: var(--accent-dim); color: var(--accent); }
+.cl-chips span { background: rgba(255,255,255,0.05); border: 1px solid var(--glass-brd);
+  font-size: 12px; padding: 6px 13px; border-radius: 999px; color: var(--text); }
+.cl-chips--accent span { background: var(--accent-dim); border-color: transparent; color: var(--accent); }
 
-.cl-rank { display: flex; align-items: center; gap: 14px; background: var(--surface);
-  border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
-.cl-rank.is-me { background: var(--accent-dim); border: 1px solid var(--accent); }
-.cl-rank__num { width: 26px; text-align: center; color: var(--accent); font-weight: 800; }
-.cl-rank__body { flex: 1; }
+/* ---- 랭킹 ---- */
+.cl-rank { display: flex; align-items: center; gap: 14px; background: var(--glass);
+  border: 1px solid var(--glass-brd); border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; }
+.cl-rank.is-me { background: var(--accent-dim); border-color: rgba(67,211,176,0.5);
+  box-shadow: 0 0 0 1px rgba(67,211,176,0.15); }
+.cl-rank__num { width: 26px; text-align: center; font-family: 'Space Grotesk', monospace;
+  color: var(--accent); font-weight: 700; }
+.cl-rank__body { flex: 1; min-width: 0; }
 .cl-rank__name { font-size: 14px; font-weight: 700; }
-.cl-rank__product { font-size: 12px; color: var(--text-muted); }
-.cl-rank__score { font-size: 15px; font-weight: 800; margin-right: 10px; }
+.cl-rank__product { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.cl-rank__score { font-family: 'Space Grotesk', monospace; font-size: 16px; font-weight: 700; margin-right: 8px; }
 .cl-rank__link { font-size: 11px; color: var(--accent); text-decoration: none; white-space: nowrap; }
+.cl-rank__link:hover { text-decoration: underline; }
 
-.cl-countdown { background: var(--surface); border-radius: 20px; padding: 22px; text-align: center; margin-bottom: 14px; }
-.cl-countdown__dday { color: var(--accent); font-size: 38px; font-weight: 800; margin: 0; }
-.cl-countdown__label { color: var(--text-muted); font-size: 13px; margin: 4px 0 0; }
-.cl-today { background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 14px;
-  padding: 16px; margin-bottom: 14px; }
-.cl-today__label { color: var(--accent); font-size: 12px; font-weight: 700; margin: 0 0 4px; }
+/* ---- D-day ---- */
+.cl-countdown { background: var(--glass); border: 1px solid var(--glass-brd); backdrop-filter: blur(16px);
+  border-radius: 24px; padding: 26px; text-align: center; margin-bottom: 14px; }
+.cl-countdown__dday { font-family: 'Space Grotesk', monospace; font-size: 52px; font-weight: 700;
+  letter-spacing: -1px; margin: 0;
+  background: linear-gradient(115deg, var(--accent-2), var(--accent));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.cl-countdown__label { color: var(--muted); font-size: 13px; margin: 4px 0 0; letter-spacing: 0.5px; }
+.cl-today { background: var(--accent-dim); border: 1px solid rgba(67,211,176,0.5); border-radius: 16px;
+  padding: 18px; margin-bottom: 14px; }
+.cl-today__label { color: var(--accent); font-family: 'Space Grotesk', monospace; font-size: 11px;
+  letter-spacing: 2px; text-transform: uppercase; margin: 0 0 5px; }
 .cl-today__text { font-size: 15px; font-weight: 600; margin: 0; }
-.cl-routine { display: flex; gap: 12px; background: var(--surface); border-radius: 10px;
-  padding: 12px 14px; font-size: 13px; margin-bottom: 8px; }
-.cl-routine__day { color: var(--accent); font-weight: 700; flex-shrink: 0; min-width: 42px; }
-
-div.stButton > button { border-radius: 14px; font-weight: 700; }
+.cl-routine { display: flex; gap: 14px; align-items: baseline; background: var(--glass);
+  border: 1px solid var(--glass-brd); border-radius: 12px; padding: 13px 15px; font-size: 13px;
+  margin-bottom: 8px; }
+.cl-routine__day { font-family: 'Space Grotesk', monospace; color: var(--accent); font-weight: 700;
+  flex-shrink: 0; min-width: 44px; }
 </style>
 """
 
@@ -205,31 +303,67 @@ def go(screen: str) -> None:
     st.session_state.screen = screen
 
 
-def render_home() -> None:
-    st.markdown('<p class="cl-wordmark">clozkin</p>', unsafe_allow_html=True)
-    st.markdown('<p class="cl-sub">뷰티 입문 남성을 위한 AI 스킨케어 가이드</p>',
-                unsafe_allow_html=True)
+def back_button() -> None:
+    with st.container(key="back"):
+        st.button("← 홈으로", key="btn_back", on_click=go, args=("home",))
 
-    diagnosis = st.session_state.get("last_diagnosis")
-    banner_text = diagnosis["summary"] if diagnosis and diagnosis.get("summary") \
-        else "피부 진단부터 시작해보세요"
+
+def section_title(title: str, tag: str) -> None:
+    st.markdown(f'<div class="cl-sec">{tag}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="cl-h">{title}</div>', unsafe_allow_html=True)
+
+
+def nav_card(idx: str, tag: str, title: str, desc: str, target: str) -> None:
+    with st.container(key=f"navcard_{target}"):
+        st.markdown(
+            f'<div class="cl-nav">'
+            f'<div class="cl-nav__top"><span class="cl-nav__idx">{idx}</span>'
+            f'<span class="cl-nav__tag">{tag}</span></div>'
+            f'<div class="cl-nav__title">{title}</div>'
+            f'<div class="cl-nav__desc">{desc}</div>'
+            f'<span class="cl-nav__arrow">→</span></div>',
+            unsafe_allow_html=True,
+        )
+        st.button(title, key=f"navbtn_{target}", on_click=go, args=(target,),
+                  use_container_width=True)
+
+
+def render_home() -> None:
     st.markdown(
-        f'<div class="cl-banner"><p class="cl-banner__label">오늘의 1분 케어</p>'
-        f'<p class="cl-banner__text">{banner_text}</p></div>',
+        '<div class="cl-brand"><span class="cl-brand__dot"></span>'
+        '<span class="cl-brand__name">clozkin</span>'
+        '<span class="cl-brand__tag">AI BEAUTY GUIDE</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<h1 class="cl-hero__title">세안 다음은,<br>'
+        '<span class="cl-grad">당연히 스킨케어.</span></h1>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p class="cl-hero__sub">토너·세럼 순서 몰라도 괜찮아요.<br>'
+        '사진 한 장으로 지금 내 피부를 읽고, 딱 필요한 것만 알려드릴게요.</p>',
         unsafe_allow_html=True,
     )
 
-    st.button("◎  피부 진단하기\n\n사진 한 장으로 지금 내 피부 상태 확인",
-              use_container_width=True, on_click=go, args=("diagnose",))
-    st.button("◆  우리 동네 피부랭킹\n\n피부 좋은 남자들은 뭘 쓸까",
-              use_container_width=True, on_click=go, args=("ranking",))
-    st.button("▲  D-day 케어 모드\n\n소개팅·면접 전 집중 관리",
-              use_container_width=True, on_click=go, args=("event",))
+    diagnosis = st.session_state.get("last_diagnosis")
+    if diagnosis and diagnosis.get("summary"):
+        st.markdown(
+            f'<div class="cl-status"><b>최근 진단</b> · {diagnosis["summary"]}</div>',
+            unsafe_allow_html=True,
+        )
+
+    nav_card("01", "DIAGNOSIS", "AI 피부 진단",
+             "얼굴을 스캔해 유수분·트러블·모공 상태를 30초 만에 분석해요.", "diagnose")
+    nav_card("02", "RANKING", "우리 동네 피부 랭킹",
+             "같은 동네 남자들의 피부 점수와, 상위권이 실제 쓰는 아이템.", "ranking")
+    nav_card("03", "D-DAY", "D-day 케어 모드",
+             "소개팅·면접 전, 날짜 역산 집중 관리 루틴을 짜드려요.", "event")
 
 
 def render_diagnose(client: anthropic.Anthropic | None) -> None:
-    st.button("‹ 홈으로", on_click=go, args=("home",))
-    st.subheader("피부 진단")
+    back_button()
+    section_title("AI 피부 진단", "DIAGNOSIS")
 
     if client is None:
         st.error("ANTHROPIC_API_KEY가 설정되지 않았습니다. Streamlit Secrets를 확인하세요.")
@@ -253,7 +387,8 @@ def render_diagnose(client: anthropic.Anthropic | None) -> None:
             media_type = up.type or "image/jpeg"
             st.image(image_bytes, width=240)
 
-    if image_bytes and st.button("이 사진으로 진단하기", use_container_width=True):
+    if image_bytes and st.button("이 사진으로 진단하기", type="primary",
+                                 use_container_width=True):
         with st.spinner("피부 상태를 분석하는 중..."):
             try:
                 result = diagnose_skin(client, image_bytes, media_type)
@@ -273,9 +408,9 @@ def render_diagnose(client: anthropic.Anthropic | None) -> None:
         )
         st.markdown(
             f'<div class="cl-result">'
-            f'<p class="cl-result__label">피부 스코어</p>'
+            f'<p class="cl-result__label">SKIN SCORE</p>'
             f'<p class="cl-result__score">{result.get("score", "-")}</p>'
-            f'<p class="cl-result__type">피부 타입: {result.get("skin_type", "-")}</p>'
+            f'<p class="cl-result__type">피부 타입 · {result.get("skin_type", "-")}</p>'
             f'<p class="cl-result__summary">{result.get("summary", "")}</p>'
             f'<div class="cl-chips">{concerns}</div>'
             f'<div class="cl-chips cl-chips--accent">{ingredients}</div>'
@@ -287,8 +422,8 @@ def render_diagnose(client: anthropic.Anthropic | None) -> None:
 
 
 def render_ranking() -> None:
-    st.button("‹ 홈으로", on_click=go, args=("home",))
-    st.subheader("우리 동네 피부랭킹")
+    back_button()
+    section_title("우리 동네 피부 랭킹", "RANKING")
 
     diagnosis = st.session_state.get("last_diagnosis")
     board = [dict(x) for x in MOCK_RANKING]
@@ -322,23 +457,24 @@ def render_ranking() -> None:
 
 
 def render_event(client: anthropic.Anthropic | None) -> None:
-    st.button("‹ 홈으로", on_click=go, args=("home",))
-    st.subheader("D-day 케어 모드")
+    back_button()
+    section_title("D-day 케어 모드", "D-DAY")
 
     if client is None:
         st.error("ANTHROPIC_API_KEY가 설정되지 않았습니다. Streamlit Secrets를 확인하세요.")
         return
 
-    st.markdown('<p style="color:#9aa1a8;font-size:13px;margin-bottom:6px;">'
-                '어떤 이벤트를 준비하시나요?</p>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-sec">어떤 이벤트를 준비하시나요?</div>', unsafe_allow_html=True)
     event_key = st.radio(
         "이벤트", list(EVENT_LABELS.keys()),
         format_func=lambda k: EVENT_LABELS[k], horizontal=True,
         label_visibility="collapsed",
     )
-    target_date = st.date_input("언제인가요?", min_value=date.today())
+    st.markdown('<div class="cl-sec">언제인가요?</div>', unsafe_allow_html=True)
+    target_date = st.date_input("언제인가요?", min_value=date.today(),
+                                label_visibility="collapsed")
 
-    if st.button("케어 루틴 만들기", use_container_width=True):
+    if st.button("케어 루틴 만들기", type="primary", use_container_width=True):
         days_left = (target_date - date.today()).days
         if days_left < 0:
             st.error("목표 날짜는 오늘 이후여야 합니다.")
@@ -371,7 +507,7 @@ def render_event(client: anthropic.Anthropic | None) -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            f'<div class="cl-today"><p class="cl-today__label">오늘 할 일</p>'
+            f'<div class="cl-today"><p class="cl-today__label">TODAY</p>'
             f'<p class="cl-today__text">{routine.get("today_task", "")}</p></div>',
             unsafe_allow_html=True,
         )
