@@ -1,5 +1,5 @@
 """
-closkin - 뷰티 입문 남성을 위한 AI 스킨케어 가이드 MVP (Streamlit 버전)
+clozkin - 뷰티 입문 남성을 위한 AI 스킨케어 가이드 MVP (Streamlit 버전)
 
 Streamlit Cloud 배포용. 기존 Flask 단일 파일 버전을 Streamlit으로 포팅했다.
   - 피부 진단: 카메라/사진 업로드 -> Claude Vision 분석
@@ -206,7 +206,7 @@ def go(screen: str) -> None:
 
 
 def render_home() -> None:
-    st.markdown('<p class="cl-wordmark">closkin</p>', unsafe_allow_html=True)
+    st.markdown('<p class="cl-wordmark">clozkin</p>', unsafe_allow_html=True)
     st.markdown('<p class="cl-sub">뷰티 입문 남성을 위한 AI 스킨케어 가이드</p>',
                 unsafe_allow_html=True)
 
@@ -387,7 +387,7 @@ def render_event(client: anthropic.Anthropic | None) -> None:
 # 엔트리포인트
 # ---------------------------------------------------------------------------
 def main() -> None:
-    st.set_page_config(page_title="closkin", page_icon="◎", layout="centered")
+    st.set_page_config(page_title="clozkin", page_icon="◎", layout="centered")
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
     if "screen" not in st.session_state:
