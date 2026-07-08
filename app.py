@@ -24,9 +24,16 @@ from datetime import date
 
 import cv2
 import numpy as np
+import pandas as pd
 import streamlit as st
 import anthropic
 from PIL import Image, ImageDraw
+
+try:  # 위치(GPS) 컴포넌트 - 미설치 시에도 앱이 동작하도록 가드
+    from streamlit_geolocation import streamlit_geolocation
+    _HAS_GEO = True
+except Exception:  # noqa: BLE001
+    _HAS_GEO = False
 
 MODEL_NAME = "claude-sonnet-5"
 LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clozkin_logo.png")
@@ -65,12 +72,24 @@ EVENT_LABELS = {
 
 OLIVEYOUNG_SEARCH = "https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query="
 
+# 네이버 쇼핑 최저가 검색 (가격 낮은순 정렬)
+NAVER_SHOP_SEARCH = "https://search.shopping.naver.com/search/all?sort=price_asc&query="
+
 # 쇼핑백 아이콘 (feather "shopping-bag") - 올리브영 바로가기 버튼용
 SHOP_ICON = (
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
     'stroke-linecap="round" stroke-linejoin="round">'
     '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/>'
     '<path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>'
+)
+
+# 가격표 아이콘 (feather "tag") - 최저가 검색 버튼용
+PRICE_ICON = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 '
+    '.586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/>'
+    '<circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>'
 )
 
 # 피부 타입별 로컬 추천 제품 (API 키 없이 D-day 모드에서 사용)
@@ -91,6 +110,34 @@ def shop_button(product_name: str) -> str:
     link = OLIVEYOUNG_SEARCH + product_name.replace(" ", "+")
     return (f'<a class="cl-shop-btn" target="_blank" rel="noopener" href="{link}" '
             f'title="올리브영에서 보기" aria-label="올리브영에서 보기">{SHOP_ICON}</a>')
+
+
+def price_button(product_name: str) -> str:
+    """제품명으로 네이버 최저가(가격 낮은순) 검색을 여는 아이콘 버튼 HTML을 반환."""
+    link = NAVER_SHOP_SEARCH + product_name.replace(" ", "+")
+    return (f'<a class="cl-price-btn" target="_blank" rel="noopener" href="{link}" '
+            f'title="최저가 검색" aria-label="최저가 검색">{PRICE_ICON}</a>')
+
+
+def buy_buttons(product_name: str) -> str:
+    """올리브영 + 최저가 아이콘 버튼을 한 그룹으로 묶어 반환."""
+    return (f'<div class="cl-shop-group">{shop_button(product_name)}'
+            f'{price_button(product_name)}</div>')
+
+
+def nearby_points(lat: float, lon: float) -> "pd.DataFrame":
+    """내 위치(첫 점) + 주변 사용자 목업 좌표를 지도용 DataFrame으로 생성."""
+    offsets = [
+        (0.0, 0.0), (0.0042, 0.0031), (-0.0035, 0.0044), (0.0051, -0.0039),
+        (-0.0048, -0.0028), (0.0022, 0.0059), (-0.0061, 0.0018),
+    ]
+    rows = [
+        {"lat": lat + dy, "lon": lon + dx,
+         "color": "#43d3b0" if i == 0 else "#9aa4ad",
+         "size": 130 if i == 0 else 70}
+        for i, (dy, dx) in enumerate(offsets)
+    ]
+    return pd.DataFrame(rows)
 
 
 def recommend_products(diagnosis: dict) -> list[dict]:
@@ -552,9 +599,16 @@ CUSTOM_CSS = """
 .st-key-chatwidget {
   /* 넓은 화면에선 본문(560px) 컬럼 오른쪽 가장자리에 맞춰 가운데쪽으로,
      좁은 화면에선 화면 끝 16px 로 자동 조정 */
-  position: fixed; right: max(16px, calc(50% - 272px)); bottom: 22px; z-index: 1000;
-  width: auto; max-width: calc(100vw - 32px);
+  position: fixed; right: max(16px, calc(50% - 272px)); bottom: 22px; z-index: 9999;
+  width: auto; max-width: calc(100vw - 28px);
 }
+/* 열린 상태의 채팅 카드 - 불투명 배경으로 본문과 겹쳐 글자가 비치는 문제 방지 */
+.st-key-chatcard {
+  width: min(340px, calc(100vw - 28px)); margin: 0 0 12px auto;
+  background: #0e141b; border: 1px solid var(--glass-brd);
+  border-radius: 22px; overflow: hidden; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.62);
+}
+.st-key-chatcard [data-testid="stVerticalBlock"] { gap: 8px; }
 /* 토글 버튼(FAB) - 열림/닫힘 공통 */
 .st-key-chat_fab { display: flex; justify-content: flex-end; }
 .st-key-chat_fab .stButton > button {
@@ -567,13 +621,8 @@ CUSTOM_CSS = """
 .st-key-chat_fab .stButton > button:hover {
   transform: translateY(-2px) scale(1.04); color: var(--ink); filter: brightness(1.05);
 }
-/* 채팅 패널 */
-.cl-chat-panel {
-  width: min(320px, calc(100vw - 32px)); margin-bottom: 12px;
-  background: rgba(13, 18, 24, 0.92); backdrop-filter: blur(20px);
-  border: 1px solid var(--glass-brd); border-radius: 22px; overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
-}
+/* 채팅 패널(헤더+말풍선) - 배경/테두리는 바깥 카드(.st-key-chatcard)가 담당 */
+.cl-chat-panel { background: transparent; }
 .cl-chat-head { padding: 16px 18px; border-bottom: 1px solid var(--glass-brd);
   display: flex; align-items: center; gap: 10px; }
 .cl-chat-head__dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent);
@@ -597,12 +646,8 @@ CUSTOM_CSS = """
   color: var(--text); font-size: 13px;
 }
 .st-key-chatwidget .stTextInput input:focus { border-color: var(--accent); box-shadow: none; }
-/* 패널·칩·입력 폭을 동일하게 (오른쪽 정렬) */
-.st-key-chat_chips, .st-key-chat_form {
-  width: min(320px, calc(100vw - 32px)); margin-left: auto;
-}
 /* 빠른 질문 추천 칩 */
-.st-key-chat_chips { padding: 0 14px 2px; }
+.st-key-chat_chips { padding: 2px 14px 0; }
 .st-key-chat_chips [data-testid="column"] { padding: 0 3px; }
 .st-key-chat_chips .stButton > button {
   border-radius: 999px; font-size: 11.5px; font-weight: 600; padding: 7px 8px;
@@ -642,14 +687,25 @@ CUSTOM_CSS = """
   background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
 .cl-prank__meta { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
 
-/* ---- 올리브영 바로가기 아이콘 버튼 ---- */
-.cl-shop-btn { display: inline-flex; align-items: center; justify-content: center;
+/* ---- 구매 아이콘 버튼 (올리브영 / 최저가) ---- */
+.cl-shop-group { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cl-shop-btn, .cl-price-btn { display: inline-flex; align-items: center; justify-content: center;
   width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0; text-decoration: none;
-  background: var(--accent-dim); border: 1px solid rgba(67,211,176,0.35); color: var(--accent);
   transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, border-color 0.2s ease; }
+.cl-shop-btn svg, .cl-price-btn svg { width: 17px; height: 17px; }
+/* 올리브영 = 민트 */
+.cl-shop-btn { background: var(--accent-dim); border: 1px solid rgba(67,211,176,0.35); color: var(--accent); }
 .cl-shop-btn:hover { transform: translateY(-1px); border-color: transparent; color: var(--ink);
   background: linear-gradient(115deg, var(--accent-2), var(--accent)); }
-.cl-shop-btn svg { width: 17px; height: 17px; }
+/* 최저가 = 앰버 */
+.cl-price-btn { background: rgba(244,193,94,0.14); border: 1px solid rgba(244,193,94,0.4); color: #f4c15e; }
+.cl-price-btn:hover { transform: translateY(-1px); border-color: transparent; color: #2a1e05;
+  background: linear-gradient(115deg, #ffd98a, #f4c15e); }
+
+/* ---- 카메라 거울(좌우반전) 모드 - 셀피처럼 자연스럽게 미리보기 ----
+   앱 내 유일한 video 요소가 웹캠 프리뷰라 안전하게 좌우반전 적용 */
+.stApp [data-testid="stCameraInput"] video,
+.stApp video { transform: scaleX(-1); }
 
 /* ---- D-day 추천 제품 ---- */
 .cl-rec { display: flex; align-items: center; gap: 12px; background: var(--glass);
@@ -674,6 +730,12 @@ CUSTOM_CSS = """
   .cl-prank { padding: 12px 13px; gap: 10px; }
   .cl-prank__name { font-size: 13px; }
   .cl-note { font-size: 12.5px; }
+  /* 좁은 화면에선 구매 아이콘 버튼을 조금 작게·간격 좁게 해서 이름이 잘리지 않도록 */
+  .cl-shop-group { gap: 6px; }
+  .cl-shop-btn, .cl-price-btn { width: 34px; height: 34px; border-radius: 10px; }
+  .cl-shop-btn svg, .cl-price-btn svg { width: 15px; height: 15px; }
+  .cl-rank { gap: 9px; padding: 12px 12px; }
+  .st-key-chatcard { width: min(340px, calc(100vw - 24px)); }
 }
 </style>
 """
@@ -839,9 +901,34 @@ def render_diagnose(client: anthropic.Anthropic | None) -> None:
                   on_click=go, args=("ranking",))
 
 
+def render_nearby_map() -> None:
+    """GPS 위치를 받아 내 주변 사용자 분포를 간단한 지도로 보여준다."""
+    st.markdown('<div class="cl-sec">NEARBY</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">내 주변 피부 랭킹 지도</div>', unsafe_allow_html=True)
+
+    lat = lon = None
+    if _HAS_GEO:
+        st.caption("아래 위치 버튼을 누르면 내 주변 사용자 분포를 지도로 볼 수 있어요.")
+        loc = streamlit_geolocation()
+        if isinstance(loc, dict):
+            lat, lon = loc.get("latitude"), loc.get("longitude")
+    else:
+        st.caption("위치 컴포넌트를 불러오지 못해 기본 위치(서울 강남)로 표시해요.")
+
+    if lat and lon:
+        st.map(nearby_points(lat, lon), color="color", size="size", zoom=13)
+        st.caption(f"📍 현재 위치 기준 · 민트 점이 나예요 (위도 {lat:.4f}, 경도 {lon:.4f})")
+    else:
+        # 위치 미허용 시 기본 위치(서울 강남역)로 예시 지도
+        st.map(nearby_points(37.4979, 127.0276), color="color", size="size", zoom=13)
+        st.caption("위치 권한을 허용하면 실제 내 주변으로 지도가 바뀌어요. (지금은 예시 위치)")
+
+
 def render_ranking() -> None:
     back_button()
     section_title("우리 동네 피부 랭킹", "RANKING")
+
+    render_nearby_map()
 
     diagnosis = st.session_state.get("last_diagnosis")
     board = [dict(x) for x in MOCK_RANKING]
@@ -865,7 +952,7 @@ def render_ranking() -> None:
             f'<div class="cl-rank__name">{entry["name"]}</div>'
             f'<div class="cl-rank__product">{entry["product"]}</div></div>'
             f'<div class="cl-rank__score">{entry["score"]}</div>'
-            f'{shop_button(entry["product"])}'
+            f'{buy_buttons(entry["product"])}'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -887,7 +974,7 @@ def render_ranking() -> None:
             f'<span class="cl-prank__cat">{p["category"]}</span></div>'
             f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
             f'<div class="cl-prank__meta">{p["users"]:,}명 사용</div></div>'
-            f'{shop_button(p["name"])}'
+            f'{buy_buttons(p["name"])}'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -979,7 +1066,7 @@ def render_event(client: anthropic.Anthropic | None) -> None:
                     f'<div class="cl-rec"><div class="cl-rec__body">'
                     f'<div class="cl-rec__name">{name}</div>'
                     f'<div class="cl-rec__reason">{reason}</div></div>'
-                    f'{shop_button(name)}</div>',
+                    f'{buy_buttons(name)}</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -1041,39 +1128,41 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
         chat_open = st.session_state.get("chat_open", False)
 
         if chat_open:
-            # --- 대화 내역 ---
-            bubbles = "".join(
-                f'<div class="cl-msg cl-msg--{"user" if m["role"] == "user" else "bot"}">'
-                f'{html.escape(m["content"]).replace(chr(10), "<br>")}</div>'
-                for m in st.session_state.chat_messages
-            )
-            st.markdown(
-                '<div class="cl-chat-panel">'
-                '<div class="cl-chat-head"><span class="cl-chat-head__dot"></span>'
-                '<span class="cl-chat-head__name">clozkin 가이드</span>'
-                '<span class="cl-chat-head__sub">AI</span></div>'
-                f'<div class="cl-chat-body">{bubbles}</div>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
-            # --- 빠른 질문 추천 칩 ---
-            with st.container(key="chat_chips"):
-                cols = st.columns(2, gap="small")
-                for i, q in enumerate(QUICK_QUESTIONS):
-                    cols[i % 2].button(q, key=f"chip_{i}", on_click=queue_chat,
-                                       args=(q,), use_container_width=True)
-
-            # --- 입력창 ---
-            with st.form(key="chat_form", clear_on_submit=True):
-                user_text = st.text_input(
-                    "메시지", placeholder="궁금한 걸 입력해보세요",
-                    label_visibility="collapsed",
+            # 패널·칩·입력을 하나의 불투명 카드로 묶어 본문과 겹쳐 보이지 않게 한다.
+            with st.container(key="chatcard"):
+                # --- 대화 내역 ---
+                bubbles = "".join(
+                    f'<div class="cl-msg cl-msg--{"user" if m["role"] == "user" else "bot"}">'
+                    f'{html.escape(m["content"]).replace(chr(10), "<br>")}</div>'
+                    for m in st.session_state.chat_messages
                 )
-                submitted = st.form_submit_button("보내기", use_container_width=True)
-            if submitted and user_text.strip():
-                queue_chat(user_text)
-                st.rerun()
+                st.markdown(
+                    '<div class="cl-chat-panel">'
+                    '<div class="cl-chat-head"><span class="cl-chat-head__dot"></span>'
+                    '<span class="cl-chat-head__name">clozkin 가이드</span>'
+                    '<span class="cl-chat-head__sub">AI</span></div>'
+                    f'<div class="cl-chat-body">{bubbles}</div>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # --- 빠른 질문 추천 칩 ---
+                with st.container(key="chat_chips"):
+                    cols = st.columns(2, gap="small")
+                    for i, q in enumerate(QUICK_QUESTIONS):
+                        cols[i % 2].button(q, key=f"chip_{i}", on_click=queue_chat,
+                                           args=(q,), use_container_width=True)
+
+                # --- 입력창 ---
+                with st.form(key="chat_form", clear_on_submit=True):
+                    user_text = st.text_input(
+                        "메시지", placeholder="궁금한 걸 입력해보세요",
+                        label_visibility="collapsed",
+                    )
+                    submitted = st.form_submit_button("보내기", use_container_width=True)
+                if submitted and user_text.strip():
+                    queue_chat(user_text)
+                    st.rerun()
 
         # --- FAB 토글 버튼 ---
         with st.container(key="chat_fab"):
