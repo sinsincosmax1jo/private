@@ -21,6 +21,7 @@ import base64
 from io import BytesIO
 from datetime import date
 
+import numpy as np
 import streamlit as st
 import anthropic
 from PIL import Image
@@ -70,15 +71,38 @@ def get_client(api_key: str) -> anthropic.Anthropic:
 
 
 @st.cache_data(show_spinner=False)
-def logo_data_uri(size: int = 320) -> str | None:
-    """브랜드 로고를 축소해 data URI 로 반환 (없으면 None)."""
+def logo_data_uri(size: int = 300) -> str | None:
+    """브랜드 로고에서 흰 배경을 제거하고 다크 테마용으로 리컬러한 data URI 반환.
+
+    - 흰색 배경 -> 투명
+    - 진회색(글자/손 아이콘) -> 밝은 텍스트 색으로 변경 (다크 배경에서 보이도록)
+    - 민트 계열 포인트 -> 원색 유지
+    """
     try:
         img = Image.open(LOGO_PATH).convert("RGBA")
     except (OSError, FileNotFoundError):
         return None
     img.thumbnail((size, size), Image.LANCZOS)
+
+    arr = np.array(img).astype(np.int16)
+    r, g, b, a = arr[..., 0], arr[..., 1], arr[..., 2], arr[..., 3]
+    mn = np.minimum(np.minimum(r, g), b)
+    mx = np.maximum(np.maximum(r, g), b)
+    chroma = mx - mn
+    ink = 255 - mn                 # 흰색 배경일수록 0, 잉크(어두움/채색)일수록 큼
+    colored = chroma > 45          # 민트 포인트
+    gray = (~colored) & (ink > 8)  # 무채색 잉크 = 글자/아이콘
+
+    out = np.zeros_like(arr)
+    out[..., 0] = np.where(gray, 238, r)   # 회색 -> 밝은 텍스트색(#eef2f4)
+    out[..., 1] = np.where(gray, 242, g)
+    out[..., 2] = np.where(gray, 244, b)
+    alpha = np.where(colored, np.maximum(ink, 210), ink)
+    out[..., 3] = np.clip(np.minimum(alpha, a), 0, 255)
+
+    result = Image.fromarray(out.astype(np.uint8), "RGBA")
     buf = BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    result.save(buf, format="PNG", optimize=True)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
@@ -190,10 +214,9 @@ CUSTOM_CSS = """
 #MainMenu, header, footer { visibility: hidden; }
 
 /* ---- 브랜드 / 히어로 ---- */
-.cl-logo-wrap { display: flex; justify-content: center; margin: 2px 0 0; }
-.cl-logo { width: 120px; height: 120px; object-fit: contain; border-radius: 30px;
-  background: #fbfdfd; padding: 15px;
-  box-shadow: 0 16px 46px rgba(67, 211, 176, 0.20), 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.cl-logo-wrap { display: flex; justify-content: center; margin: 4px 0 0; }
+.cl-logo { width: 148px; height: 148px; object-fit: contain;
+  filter: drop-shadow(0 10px 30px rgba(67, 211, 176, 0.28)); }
 .cl-badge-tag { text-align: center; font-family: 'Space Grotesk', monospace; font-size: 10.5px;
   letter-spacing: 3px; color: var(--muted); font-weight: 600; margin: 14px 0 0; }
 
@@ -216,35 +239,32 @@ CUSTOM_CSS = """
   border: 1px solid var(--glass-brd); font-size: 13px; color: var(--text); }
 .cl-status b { color: var(--accent); font-weight: 700; }
 
-/* ---- 홈 네비게이션 카드 (컨테이너 위에 투명 버튼 오버레이) ---- */
-[class*="st-key-navcard_"] { position: relative; margin-bottom: 14px; }
-.cl-nav {
-  position: relative; border-radius: 22px; padding: 22px 22px 46px;
+/* ---- 홈 네비게이션 카드 (버튼 자체가 카드) ---- */
+[class*="st-key-navbtn_"] { margin-bottom: 14px; }
+[class*="st-key-navbtn_"] .stButton > button {
+  display: block; text-align: left; width: 100%;
+  padding: 22px 22px 40px; border-radius: 22px; position: relative; overflow: hidden;
   background: var(--glass); border: 1px solid var(--glass-brd);
-  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  overflow: hidden; transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
-.cl-nav::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+[class*="st-key-navbtn_"] .stButton > button::before { content: ""; position: absolute;
+  top: 0; left: 0; right: 0; height: 1px;
   background: linear-gradient(90deg, transparent, rgba(94, 234, 212, 0.5), transparent); }
-.cl-nav__top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.cl-nav__idx { font-family: 'Space Grotesk', monospace; font-size: 12px; font-weight: 700;
-  color: var(--accent); letter-spacing: 1px; }
-.cl-nav__tag { font-family: 'Space Grotesk', monospace; font-size: 10px; letter-spacing: 2.5px;
-  color: var(--muted); text-transform: uppercase; }
-.cl-nav__title { font-size: 21px; font-weight: 800; letter-spacing: -0.6px; margin-bottom: 7px; }
-.cl-nav__desc { font-size: 13px; color: var(--muted); line-height: 1.55; max-width: 84%; }
-.cl-nav__arrow { position: absolute; right: 22px; bottom: 18px; color: var(--accent);
-  font-size: 17px; transition: transform 0.25s ease; }
-
-[class*="st-key-navcard_"]:hover .cl-nav {
-  transform: translateY(-2px); border-color: rgba(67, 211, 176, 0.5);
+[class*="st-key-navbtn_"] .stButton > button::after { content: "→"; position: absolute;
+  right: 22px; bottom: 15px; color: var(--accent); font-size: 17px; transition: transform 0.25s ease; }
+[class*="st-key-navbtn_"] .stButton > button:hover {
+  transform: translateY(-2px); border-color: rgba(67, 211, 176, 0.5); color: var(--text);
   box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.2), 0 16px 44px rgba(67, 211, 176, 0.12);
 }
-[class*="st-key-navcard_"]:hover .cl-nav__arrow { transform: translateX(4px); }
-
-/* 카드 전체를 덮는 투명 클릭 레이어 */
-[class*="st-key-navcard_"] .stButton { position: absolute; inset: 0; margin: 0; z-index: 4; }
-[class*="st-key-navcard_"] .stButton > button { width: 100%; height: 100%; opacity: 0; border: 0; }
+[class*="st-key-navbtn_"] .stButton > button:hover::after { transform: translateX(4px); }
+[class*="st-key-navbtn_"] .stButton > button p { margin: 0; }
+[class*="st-key-navbtn_"] .stButton > button p:nth-of-type(1) {
+  font-family: 'Space Grotesk', monospace; font-size: 11px; letter-spacing: 2px;
+  color: var(--accent); text-transform: uppercase; margin-bottom: 12px; }
+[class*="st-key-navbtn_"] .stButton > button p:nth-of-type(2) {
+  font-size: 21px; font-weight: 800; letter-spacing: -0.6px; color: var(--text); margin-bottom: 7px; }
+[class*="st-key-navbtn_"] .stButton > button p:nth-of-type(3) {
+  font-size: 13px; font-weight: 500; color: var(--muted); line-height: 1.55; }
 
 /* ---- 일반 버튼 ---- */
 .stButton > button {
@@ -338,18 +358,10 @@ def section_title(title: str, tag: str) -> None:
 
 
 def nav_card(idx: str, tag: str, title: str, desc: str, target: str) -> None:
-    with st.container(key=f"navcard_{target}"):
-        st.markdown(
-            f'<div class="cl-nav">'
-            f'<div class="cl-nav__top"><span class="cl-nav__idx">{idx}</span>'
-            f'<span class="cl-nav__tag">{tag}</span></div>'
-            f'<div class="cl-nav__title">{title}</div>'
-            f'<div class="cl-nav__desc">{desc}</div>'
-            f'<span class="cl-nav__arrow">→</span></div>',
-            unsafe_allow_html=True,
-        )
-        st.button(title, key=f"navbtn_{target}", on_click=go, args=(target,),
-                  use_container_width=True)
+    # 버튼 라벨을 3개 문단(번호·제목·설명)으로 넘겨 CSS로 카드처럼 스타일링한다.
+    label = f"{idx} · {tag}\n\n{title}\n\n{desc}"
+    st.button(label, key=f"navbtn_{target}", on_click=go, args=(target,),
+              use_container_width=True)
 
 
 def render_home() -> None:
