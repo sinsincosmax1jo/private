@@ -16,6 +16,7 @@ Streamlit Cloud:
 """
 import os
 import re
+import html
 import json
 import base64
 from io import BytesIO
@@ -158,6 +159,35 @@ def diagnose_skin(client: anthropic.Anthropic, image_bytes: bytes, media_type: s
         ],
     )
     return _extract_json(_text_from_response(response))
+
+
+CHAT_SYSTEM = (
+    "너는 'clozkin'의 AI 뷰티 가이드야. 뷰티에 처음 입문하는 남성 고객을 돕는 게 목표야. "
+    "스킨케어를 세안처럼 '당연히 하는 행동'으로 느끼게 도와줘. "
+    "전문 용어는 최소화하고, 초보자도 부담 없이 따라할 수 있게 아주 친근하고 짧게 답해. "
+    "한 번에 너무 많은 걸 시키지 말고 딱 필요한 것만 골라줘. "
+    "답변은 2~4문장 이내로 간결하게. 필요하면 이모지를 가볍게 써도 좋아."
+)
+
+
+def chat_reply(client: anthropic.Anthropic, history: list[dict], diagnosis: dict | None) -> str:
+    """채팅 히스토리를 기반으로 Claude 답변 생성. history는 {role, content} 리스트."""
+    system = CHAT_SYSTEM
+    if diagnosis and diagnosis.get("summary"):
+        system += (
+            f"\n\n[사용자의 최근 피부 진단 결과] "
+            f"점수 {diagnosis.get('score', '-')}, "
+            f"피부타입 {diagnosis.get('skin_type', '-')}, "
+            f"고민 {', '.join(diagnosis.get('concerns', []))}. "
+            f"이 정보를 참고해 맞춤형으로 조언해줘."
+        )
+    response = client.messages.create(
+        model=MODEL_NAME,
+        max_tokens=500,
+        system=system,
+        messages=[{"role": m["role"], "content": m["content"]} for m in history],
+    )
+    return _text_from_response(response).strip()
 
 
 def generate_routine(client: anthropic.Anthropic, event_label: str, days_left: int,
@@ -336,6 +366,81 @@ CUSTOM_CSS = """
   margin-bottom: 8px; }
 .cl-routine__day { font-family: 'Space Grotesk', monospace; color: var(--accent); font-weight: 700;
   flex-shrink: 0; min-width: 44px; }
+
+/* ---- 플로팅 채팅봇 (우측 하단) ---- */
+.st-key-chatwidget {
+  position: fixed; right: 22px; bottom: 22px; z-index: 1000;
+  width: auto; max-width: calc(100vw - 32px);
+}
+/* 토글 버튼(FAB) - 열림/닫힘 공통 */
+.st-key-chat_fab { display: flex; justify-content: flex-end; }
+.st-key-chat_fab .stButton > button {
+  width: 58px; height: 58px; border-radius: 50%; padding: 0;
+  font-size: 24px; line-height: 1; font-weight: 700;
+  background: linear-gradient(115deg, var(--accent-2), var(--accent)); color: var(--ink);
+  border: 0; box-shadow: 0 12px 34px rgba(67, 211, 176, 0.4);
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+.st-key-chat_fab .stButton > button:hover {
+  transform: translateY(-2px) scale(1.04); color: var(--ink); filter: brightness(1.05);
+}
+/* 채팅 패널 */
+.cl-chat-panel {
+  width: min(320px, calc(100vw - 32px)); margin-bottom: 12px;
+  background: rgba(13, 18, 24, 0.92); backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-brd); border-radius: 22px; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+.cl-chat-head { padding: 16px 18px; border-bottom: 1px solid var(--glass-brd);
+  display: flex; align-items: center; gap: 10px; }
+.cl-chat-head__dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 12px var(--accent); flex-shrink: 0; }
+.cl-chat-head__name { font-size: 14px; font-weight: 800; letter-spacing: -0.3px; }
+.cl-chat-head__sub { font-size: 11px; color: var(--muted); margin-left: auto;
+  font-family: 'Space Grotesk', monospace; letter-spacing: 1px; }
+.cl-chat-body { max-height: 320px; overflow-y: auto; padding: 16px 16px 4px; }
+.cl-chat-body::-webkit-scrollbar { width: 6px; }
+.cl-chat-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+.cl-msg { font-size: 13px; line-height: 1.5; padding: 9px 13px; border-radius: 14px;
+  margin-bottom: 9px; max-width: 85%; word-break: break-word; }
+.cl-msg--bot { background: var(--glass); border: 1px solid var(--glass-brd);
+  border-bottom-left-radius: 4px; margin-right: auto; }
+.cl-msg--user { background: var(--accent-dim); border: 1px solid rgba(67,211,176,0.35);
+  color: var(--text); border-bottom-right-radius: 4px; margin-left: auto; text-align: right; }
+/* 패널 내부 입력창 */
+.st-key-chatwidget .stForm { border: 0; padding: 8px 14px 14px; }
+.st-key-chatwidget .stTextInput input {
+  background: var(--glass); border: 1px solid var(--glass-brd); border-radius: 12px;
+  color: var(--text); font-size: 13px;
+}
+.st-key-chatwidget .stTextInput input:focus { border-color: var(--accent); box-shadow: none; }
+/* 패널·칩·입력 폭을 동일하게 (오른쪽 정렬) */
+.st-key-chat_chips, .st-key-chat_form {
+  width: min(320px, calc(100vw - 32px)); margin-left: auto;
+}
+/* 빠른 질문 추천 칩 */
+.st-key-chat_chips { padding: 0 14px 2px; }
+.st-key-chat_chips [data-testid="column"] { padding: 0 3px; }
+.st-key-chat_chips .stButton > button {
+  border-radius: 999px; font-size: 11.5px; font-weight: 600; padding: 7px 8px;
+  min-height: 0; background: var(--glass); border: 1px solid var(--glass-brd);
+  color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.st-key-chat_chips .stButton > button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---- 모바일 대응 ---- */
+@media (max-width: 480px) {
+  .block-container { padding-left: 1rem; padding-right: 1rem; padding-top: 1.4rem; }
+  .cl-logo { width: 120px; height: 120px; }
+  .cl-hero__title { font-size: 30px; letter-spacing: -1px; margin: 18px 0 12px; }
+  .cl-hero__sub { font-size: 14px; }
+  .cl-result__score { font-size: 52px; }
+  .cl-countdown__dday { font-size: 42px; }
+  [class*="st-key-navbtn_"] .stButton > button p:nth-of-type(2) { font-size: 19px; }
+  .st-key-chatwidget { right: 14px; bottom: 14px; }
+  .st-key-chat_fab .stButton > button { width: 52px; height: 52px; font-size: 22px; }
+  .cl-chat-body { max-height: 42vh; }
+}
 </style>
 """
 
@@ -565,6 +670,103 @@ def render_event(client: anthropic.Anthropic | None) -> None:
             )
 
 
+# 빠른 질문 추천 칩 (초보자가 바로 누를 수 있는 예시 질문)
+QUICK_QUESTIONS = [
+    "토너·세럼 순서 알려줘",
+    "지성 피부엔 뭐부터?",
+    "여드름 자국 없애는 법",
+    "면접 전날 피부 관리",
+]
+
+
+def toggle_chat() -> None:
+    st.session_state.chat_open = not st.session_state.get("chat_open", False)
+
+
+def queue_chat(text: str) -> None:
+    """칩/폼에서 보낸 메시지를 다음 렌더에서 처리하도록 예약한다."""
+    st.session_state.chat_open = True
+    st.session_state.pending_chat = text
+
+
+def _push_and_reply(client: anthropic.Anthropic | None, text: str) -> None:
+    text = text.strip()
+    if not text:
+        return
+    st.session_state.chat_messages.append({"role": "user", "content": text})
+    if client is None:
+        st.session_state.chat_messages.append({
+            "role": "assistant",
+            "content": "지금은 AI 연결이 안 돼요. (ANTHROPIC_API_KEY 설정을 확인해주세요)"})
+        return
+    try:
+        reply = chat_reply(client, st.session_state.chat_messages,
+                           st.session_state.get("last_diagnosis"))
+    except anthropic.APIError as e:
+        reply = f"앗, 잠시 문제가 있었어요: {e}"
+    except Exception as e:  # noqa: BLE001
+        reply = f"앗, 알 수 없는 오류예요: {e}"
+    st.session_state.chat_messages.append({"role": "assistant", "content": reply})
+
+
+def render_chat_widget(client: anthropic.Anthropic | None) -> None:
+    """모든 화면 우측 하단에 뜨는 플로팅 AI 상담 챗봇."""
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = [
+            {"role": "assistant",
+             "content": "안녕하세요! 뷰티 입문 도와드리는 clozkin 가이드예요 👋 "
+                        "스킨케어 뭐든 편하게 물어보세요."}
+        ]
+
+    # 칩/폼으로 예약된 메시지를 버블 렌더 전에 처리한다.
+    pending = st.session_state.pop("pending_chat", None)
+    if pending:
+        _push_and_reply(client, pending)
+
+    with st.container(key="chatwidget"):
+        chat_open = st.session_state.get("chat_open", False)
+
+        if chat_open:
+            # --- 대화 내역 ---
+            bubbles = "".join(
+                f'<div class="cl-msg cl-msg--{"user" if m["role"] == "user" else "bot"}">'
+                f'{html.escape(m["content"]).replace(chr(10), "<br>")}</div>'
+                for m in st.session_state.chat_messages
+            )
+            st.markdown(
+                '<div class="cl-chat-panel">'
+                '<div class="cl-chat-head"><span class="cl-chat-head__dot"></span>'
+                '<span class="cl-chat-head__name">clozkin 가이드</span>'
+                '<span class="cl-chat-head__sub">AI</span></div>'
+                f'<div class="cl-chat-body">{bubbles}</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+            # --- 빠른 질문 추천 칩 ---
+            with st.container(key="chat_chips"):
+                cols = st.columns(2, gap="small")
+                for i, q in enumerate(QUICK_QUESTIONS):
+                    cols[i % 2].button(q, key=f"chip_{i}", on_click=queue_chat,
+                                       args=(q,), use_container_width=True)
+
+            # --- 입력창 ---
+            with st.form(key="chat_form", clear_on_submit=True):
+                user_text = st.text_input(
+                    "메시지", placeholder="궁금한 걸 입력해보세요",
+                    label_visibility="collapsed",
+                )
+                submitted = st.form_submit_button("보내기", use_container_width=True)
+            if submitted and user_text.strip():
+                queue_chat(user_text)
+                st.rerun()
+
+        # --- FAB 토글 버튼 ---
+        with st.container(key="chat_fab"):
+            st.button("✕" if chat_open else "💬", key="btn_chat_fab",
+                      on_click=toggle_chat, help="AI 가이드에게 물어보기")
+
+
 # ---------------------------------------------------------------------------
 # 엔트리포인트
 # ---------------------------------------------------------------------------
@@ -588,6 +790,8 @@ def main() -> None:
         render_event(client)
     else:
         render_home()
+
+    render_chat_widget(client)
 
 
 if __name__ == "__main__":
