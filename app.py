@@ -63,6 +63,44 @@ EVENT_LABELS = {
     "dating": "데이트",
 }
 
+OLIVEYOUNG_SEARCH = "https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query="
+
+# 쇼핑백 아이콘 (feather "shopping-bag") - 올리브영 바로가기 버튼용
+SHOP_ICON = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/>'
+    '<path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>'
+)
+
+# 피부 타입별 로컬 추천 제품 (API 키 없이 D-day 모드에서 사용)
+LOCAL_PRODUCTS = {
+    "지성": [("이니스프리 노세범 미네랄 파우더", "번들거림 잡아주는 피지 관리템"),
+             ("센카 퍼펙트 휩 클렌징폼", "산뜻하게 유분 정리해주는 클렌저")],
+    "건성": [("라운드랩 자작나무 수분 크림", "속건조 잡아주는 고보습 크림"),
+             ("토리든 다이브인 세럼", "가볍게 수분 채워주는 히알루론산 세럼")],
+    "민감성": [("라로슈포제 시카플라스트 밤 B5", "붉은기·자극 빠르게 진정"),
+               ("아누아 어성초 77 토너", "순하게 진정시키는 저자극 토너")],
+    "복합성": [("아누아 어성초 77 토너", "T존 유분·볼 건조 밸런스 잡기"),
+               ("라운드랩 자작나무 수분 크림", "수분·유분 균형 맞추는 보습")],
+}
+
+
+def shop_button(product_name: str) -> str:
+    """제품명으로 올리브영 검색 링크를 여는 아이콘 버튼 HTML을 반환."""
+    link = OLIVEYOUNG_SEARCH + product_name.replace(" ", "+")
+    return (f'<a class="cl-shop-btn" target="_blank" rel="noopener" href="{link}" '
+            f'title="올리브영에서 보기" aria-label="올리브영에서 보기">{SHOP_ICON}</a>')
+
+
+def recommend_products(diagnosis: dict) -> list[dict]:
+    """진단 결과(피부 타입)에 맞춘 추천 제품 목록. 이벤트 대비 선크림 포함."""
+    items = LOCAL_PRODUCTS.get(diagnosis.get("skin_type", ""), LOCAL_PRODUCTS["복합성"])
+    picks = [{"name": n, "reason": why} for n, why in items]
+    picks.append({"name": "라로슈포제 안뗄리오스 선크림",
+                  "reason": "이벤트 전 자외선 차단은 기본 중 기본"})
+    return picks[:3]
+
 
 # ---------------------------------------------------------------------------
 # 유틸 & AI 호출
@@ -255,7 +293,11 @@ def local_routine(event_label: str, days_left: int, diagnosis: dict) -> dict:
     ]
     if not routine:
         routine = [{"day_label": "D-DAY", "task": "가벼운 세안 후 보습 크림으로 마무리하기"}]
-    return {"routine": routine, "today_task": routine[0]["task"]}
+    return {
+        "routine": routine,
+        "today_task": routine[0]["task"],
+        "products": recommend_products(diagnosis),
+    }
 
 
 def diagnose_skin(client: anthropic.Anthropic, image_bytes: bytes, media_type: str) -> dict:
@@ -333,13 +375,16 @@ def generate_routine(client: anthropic.Anthropic, event_label: str, days_left: i
         f"고민 {', '.join(diagnosis.get('concerns', []))}. "
         "뷰티 초보자도 부담 없이 따라할 수 있는 D-day 역산 케어 루틴을 만들어줘. "
         "너무 많은 단계는 부담스러우니 하루에 1~2가지 행동만 제시해. "
+        "그리고 이 피부 타입/고민과 이벤트에 어울리는, 한국에서 실제로 쉽게 살 수 있는 "
+        "구체적인 시판 화장품 2~3개를 브랜드명 포함 정확한 제품명으로 추천해줘. "
         "아래 JSON 형식으로만 응답해:\n"
         '{"routine": [{"day_label": "D-3", "task": "오늘 할 일 한 줄"}, ...], '
-        '"today_task": "오늘(가장 가까운 날) 해야 할 일 한 줄"}'
+        '"today_task": "오늘(가장 가까운 날) 해야 할 일 한 줄", '
+        '"products": [{"name": "브랜드+제품명", "reason": "한 줄 추천 이유"}]}'
     )
     response = client.messages.create(
         model=MODEL_NAME,
-        max_tokens=700,
+        max_tokens=800,
         messages=[{"role": "user", "content": prompt}],
     )
     return _extract_json(_text_from_response(response))
@@ -373,6 +418,8 @@ CUSTOM_CSS = """
 .stApp, .stApp p, .stApp span, .stApp div, .stApp h1, .stApp h2, .stApp h3, .stApp label {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: var(--text);
+  word-break: keep-all;      /* 한글이 음절 단위로 끊기지 않고 어절 단위로 줄바꿈 */
+  overflow-wrap: anywhere;   /* 그래도 넘칠 땐 안전하게 줄바꿈 */
 }
 .block-container { max-width: 560px; padding-top: 2.2rem; padding-bottom: 4rem; }
 #MainMenu, header, footer { visibility: hidden; }
@@ -391,11 +438,11 @@ CUSTOM_CSS = """
 .cl-brand__name { font-size: 19px; font-weight: 800; letter-spacing: -0.4px; }
 
 .cl-hero__title { text-align: center; font-size: 38px; line-height: 1.16; font-weight: 800;
-  letter-spacing: -1.4px; margin: 22px 0 14px; }
+  letter-spacing: -1.4px; margin: 22px 0 14px; text-wrap: balance; }
 .cl-grad { background: linear-gradient(115deg, var(--accent-2), var(--accent));
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 .cl-hero__sub { text-align: center; color: var(--muted); font-size: 15px; line-height: 1.65;
-  margin: 0 auto 24px; max-width: 400px; }
+  margin: 0 auto 24px; max-width: 420px; text-wrap: balance; }
 
 .cl-status-wrap { text-align: center; }
 .cl-status { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 26px;
@@ -503,7 +550,9 @@ CUSTOM_CSS = """
 
 /* ---- 플로팅 채팅봇 (우측 하단) ---- */
 .st-key-chatwidget {
-  position: fixed; right: 22px; bottom: 22px; z-index: 1000;
+  /* 넓은 화면에선 본문(560px) 컬럼 오른쪽 가장자리에 맞춰 가운데쪽으로,
+     좁은 화면에선 화면 끝 16px 로 자동 조정 */
+  position: fixed; right: max(16px, calc(50% - 272px)); bottom: 22px; z-index: 1000;
   width: auto; max-width: calc(100vw - 32px);
 }
 /* 토글 버튼(FAB) - 열림/닫힘 공통 */
@@ -592,6 +641,22 @@ CUSTOM_CSS = """
 .cl-prank__bar span { display: block; height: 100%; border-radius: 999px;
   background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
 .cl-prank__meta { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+
+/* ---- 올리브영 바로가기 아이콘 버튼 ---- */
+.cl-shop-btn { display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0; text-decoration: none;
+  background: var(--accent-dim); border: 1px solid rgba(67,211,176,0.35); color: var(--accent);
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, border-color 0.2s ease; }
+.cl-shop-btn:hover { transform: translateY(-1px); border-color: transparent; color: var(--ink);
+  background: linear-gradient(115deg, var(--accent-2), var(--accent)); }
+.cl-shop-btn svg { width: 17px; height: 17px; }
+
+/* ---- D-day 추천 제품 ---- */
+.cl-rec { display: flex; align-items: center; gap: 12px; background: var(--glass);
+  border: 1px solid var(--glass-brd); border-radius: 14px; padding: 12px 14px; margin-bottom: 9px; }
+.cl-rec__body { flex: 1; min-width: 0; }
+.cl-rec__name { font-size: 13.5px; font-weight: 700; }
+.cl-rec__reason { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
 
 /* ---- 모바일 대응 ---- */
 @media (max-width: 480px) {
@@ -793,9 +858,6 @@ def render_ranking() -> None:
 
     board.sort(key=lambda x: x["score"], reverse=True)
     for rank, entry in enumerate(board, start=1):
-        query = entry["product"].replace(" ", "+")
-        link = ("https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query="
-                + query)
         st.markdown(
             f'<div class="cl-rank {"is-me" if entry.get("is_me") else ""}">'
             f'<div class="cl-rank__num">{rank}</div>'
@@ -803,7 +865,7 @@ def render_ranking() -> None:
             f'<div class="cl-rank__name">{entry["name"]}</div>'
             f'<div class="cl-rank__product">{entry["product"]}</div></div>'
             f'<div class="cl-rank__score">{entry["score"]}</div>'
-            f'<a class="cl-rank__link" target="_blank" rel="noopener" href="{link}">올리브영 →</a>'
+            f'{shop_button(entry["product"])}'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -817,9 +879,6 @@ def render_ranking() -> None:
     top_users = products[0]["users"]
     for rank, p in enumerate(products, start=1):
         pct = round(p["users"] / top_users * 100)
-        query = p["name"].replace(" ", "+")
-        link = ("https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query="
-                + query)
         st.markdown(
             f'<div class="cl-prank">'
             f'<div class="cl-rank__num">{rank}</div>'
@@ -827,9 +886,9 @@ def render_ranking() -> None:
             f'<div class="cl-prank__top"><span class="cl-prank__name">{p["name"]}</span>'
             f'<span class="cl-prank__cat">{p["category"]}</span></div>'
             f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
-            f'<div class="cl-prank__meta">{p["users"]:,}명 사용 · '
-            f'<a class="cl-rank__link" target="_blank" rel="noopener" href="{link}">올리브영 →</a>'
-            f'</div></div></div>',
+            f'<div class="cl-prank__meta">{p["users"]:,}명 사용</div></div>'
+            f'{shop_button(p["name"])}'
+            f'</div>',
             unsafe_allow_html=True,
         )
 
@@ -884,6 +943,9 @@ def render_event(client: anthropic.Anthropic | None) -> None:
             if result is not None:
                 result["days_left"] = days_left
                 result["event_label"] = event_label
+                # AI가 제품을 안 줬으면 로컬 추천으로 보완
+                if not result.get("products"):
+                    result["products"] = recommend_products(diagnosis)
                 st.session_state.last_routine = result
 
     routine = st.session_state.get("last_routine")
@@ -905,6 +967,21 @@ def render_event(client: anthropic.Anthropic | None) -> None:
                 f'{item.get("day_label", "")}</span><span>{item.get("task", "")}</span></div>',
                 unsafe_allow_html=True,
             )
+
+        products = routine.get("products", [])
+        if products:
+            st.markdown('<div class="cl-sec">RECOMMENDED</div>', unsafe_allow_html=True)
+            st.markdown('<div class="cl-h">이벤트 맞춤 추천 제품</div>', unsafe_allow_html=True)
+            for p in products:
+                name = p.get("name", "")
+                reason = p.get("reason", "")
+                st.markdown(
+                    f'<div class="cl-rec"><div class="cl-rec__body">'
+                    f'<div class="cl-rec__name">{name}</div>'
+                    f'<div class="cl-rec__reason">{reason}</div></div>'
+                    f'{shop_button(name)}</div>',
+                    unsafe_allow_html=True,
+                )
 
 
 # 빠른 질문 추천 칩 (초보자가 바로 누를 수 있는 예시 질문)
