@@ -22,10 +22,11 @@ import base64
 from io import BytesIO
 from datetime import date
 
+import cv2
 import numpy as np
 import streamlit as st
 import anthropic
-from PIL import Image
+from PIL import Image, ImageDraw
 
 MODEL_NAME = "claude-sonnet-5"
 LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clozkin_logo.png")
@@ -41,6 +42,17 @@ MOCK_RANKING = [
     {"name": "정O석", "score": 74, "product": "닥터지 블랙스네일 크림"},
     {"name": "강O우", "score": 68, "product": "센카 퍼펙트 워터 클렌징"},
     {"name": "조O현", "score": 63, "product": "이니스프리 그린티 세럼"},
+]
+
+# 많이 쓰는 화장품 랭킹 - 목업 데이터 (users = 동네 사용자 수)
+MOCK_PRODUCT_RANKING = [
+    {"name": "라운드랩 자작나무 수분 크림", "category": "수분크림", "users": 1284},
+    {"name": "아누아 어성초 77 토너", "category": "토너", "users": 1102},
+    {"name": "닥터지 레드 블레미쉬 진정 크림", "category": "진정크림", "users": 951},
+    {"name": "토리든 다이브인 세럼", "category": "세럼", "users": 903},
+    {"name": "라로슈포제 시카플라스트 밤", "category": "밤·연고", "users": 812},
+    {"name": "센카 퍼펙트 휩 클렌징폼", "category": "클렌저", "users": 774},
+    {"name": "이니스프리 노세범 미네랄 파우더", "category": "피지관리", "users": 689},
 ]
 
 EVENT_LABELS = {
@@ -122,6 +134,128 @@ def _text_from_response(response) -> str:
     return "".join(
         block.text for block in response.content if getattr(block, "type", "") == "text"
     )
+
+
+# ---------------------------------------------------------------------------
+# Face ID (얼굴 인식) & 오프라인 간이 분석 - OpenCV/통계 기반, API 키 불필요
+# ---------------------------------------------------------------------------
+@st.cache_resource(show_spinner=False)
+def _face_cascade() -> "cv2.CascadeClassifier":
+    return cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
+
+
+def detect_faces(image_bytes: bytes):
+    """이미지에서 얼굴 영역을 찾아 (RGB 배열, 얼굴 박스 리스트)를 반환."""
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    img.thumbnail((900, 900), Image.LANCZOS)  # 큰 사진은 축소해 인식 속도 확보
+    arr = np.array(img)
+    gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+    faces = _face_cascade().detectMultiScale(
+        gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+    )
+    return arr, [tuple(int(v) for v in f) for f in faces]
+
+
+def annotate_faces(arr: np.ndarray, faces) -> Image.Image:
+    """인식된 얼굴에 민트색 Face ID 프레임(모서리 브래킷)을 그려 반환."""
+    img = Image.fromarray(arr).convert("RGB")
+    draw = ImageDraw.Draw(img)
+    for (x, y, w, h) in faces:
+        draw.rectangle([x, y, x + w, y + h], outline=(67, 211, 176), width=3)
+        c = max(14, w // 6)
+        for cx, cy, dx, dy in (
+            (x, y, 1, 1), (x + w, y, -1, 1),
+            (x, y + h, 1, -1), (x + w, y + h, -1, -1),
+        ):
+            draw.line([cx, cy, cx + dx * c, cy], fill=(94, 234, 212), width=6)
+            draw.line([cx, cy, cx, cy + dy * c], fill=(94, 234, 212), width=6)
+    return img
+
+
+def local_diagnose(arr: np.ndarray, faces) -> dict:
+    """API 키가 없을 때 이미지 통계로 간이 피부 분석 (Face ID 간이 모드)."""
+    if faces:
+        x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+        region = arr[y:y + h, x:x + w]
+    else:
+        region = arr
+    r = region[..., 0].astype(np.float32)
+    g = region[..., 1].astype(np.float32)
+    b = region[..., 2].astype(np.float32)
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    brightness = float(lum.mean())
+    redness = float((r - (g + b) / 2).mean())   # 붉은기·트러블
+    oil = float((lum > 205).mean())              # 유분(하이라이트 비율)
+    evenness = float(lum.std())                  # 톤 균일도(높을수록 불균일)
+
+    score, concerns = 82, []
+    if redness > 18:
+        score -= 8
+        concerns.append("붉은기·트러블")
+    if oil > 0.08:
+        score -= 6
+        concerns.append("번들거림(유분)")
+    if evenness > 55:
+        score -= 5
+        concerns.append("피부톤 불균일")
+    if brightness < 90:
+        score -= 4
+        concerns.append("칙칙함")
+    if not concerns:
+        concerns = ["전반적으로 안정적"]
+    score = max(58, min(94, score))
+
+    if oil > 0.1 and redness > 15:
+        skin_type = "복합성"
+    elif oil > 0.1:
+        skin_type = "지성"
+    elif brightness < 95 and oil < 0.04:
+        skin_type = "건성"
+    elif redness > 18:
+        skin_type = "민감성"
+    else:
+        skin_type = "복합성"
+
+    ing_map = {
+        "붉은기·트러블": "센텔라",
+        "번들거림(유분)": "나이아신아마이드",
+        "피부톤 불균일": "비타민C",
+        "칙칙함": "비타민C",
+        "전반적으로 안정적": "히알루론산",
+    }
+    ingredients = list(dict.fromkeys(ing_map.get(c, "히알루론산") for c in concerns))
+    if skin_type == "건성":
+        ingredients = ["세라마이드"] + ingredients
+    ingredients = list(dict.fromkeys(ingredients))[:3]
+
+    return {
+        "score": int(score),
+        "skin_type": skin_type,
+        "concerns": concerns[:3],
+        "summary": "Face ID 간이 분석 결과예요. AI 정밀 진단은 API 키를 연결하면 이용할 수 있어요.",
+        "recommended_ingredients": ingredients,
+    }
+
+
+def local_routine(event_label: str, days_left: int, diagnosis: dict) -> dict:
+    """API 키가 없을 때 규칙 기반으로 D-day 케어 루틴을 생성."""
+    steps = [
+        "저자극 클렌저로 아침·저녁 세안하기",
+        "토너로 수분 채우고 보습 크림 바르기",
+        "자기 전 진정 세럼 한 방울 발라주기",
+        "외출 시 선크림 꼭 챙겨 바르기",
+        "물 자주 마시고 일찍 잠들기",
+        "각질 정리 대신 수분팩으로 컨디션 올리기",
+    ]
+    routine = [
+        {"day_label": f"D-{i}", "task": steps[(days_left - i) % len(steps)]}
+        for i in range(min(days_left, 6), 0, -1)
+    ]
+    if not routine:
+        routine = [{"day_label": "D-DAY", "task": "가벼운 세안 후 보습 크림으로 마무리하기"}]
+    return {"routine": routine, "today_task": routine[0]["task"]}
 
 
 def diagnose_skin(client: anthropic.Anthropic, image_bytes: bytes, media_type: str) -> dict:
@@ -428,6 +562,37 @@ CUSTOM_CSS = """
 }
 .st-key-chat_chips .stButton > button:hover { border-color: var(--accent); color: var(--accent); }
 
+/* ---- 안내 배너 (API 키 미설정 등) ---- */
+.cl-note { background: var(--accent-dim); border: 1px solid rgba(67,211,176,0.4);
+  border-radius: 14px; padding: 13px 15px; font-size: 13px; line-height: 1.55;
+  color: var(--text); margin: 6px 0 16px; }
+.cl-note b { color: var(--accent); }
+.cl-note code { background: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 6px;
+  font-size: 12px; color: var(--accent); }
+
+/* ---- Face ID 인식 상태 ---- */
+.cl-faceid { display: flex; align-items: center; gap: 10px; border-radius: 14px;
+  padding: 12px 15px; font-size: 13.5px; font-weight: 600; margin: 10px 0; }
+.cl-faceid--ok { background: var(--accent-dim); border: 1px solid rgba(67,211,176,0.5); color: var(--accent); }
+.cl-faceid--warn { background: rgba(255,180,90,0.12); border: 1px solid rgba(255,180,90,0.45); color: #ffc784; }
+.cl-faceid__dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor;
+  box-shadow: 0 0 12px currentColor; flex-shrink: 0; animation: cl-pulse 1.4s ease-in-out infinite; }
+@keyframes cl-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* ---- 많이 쓰는 화장품 랭킹 ---- */
+.cl-prank { display: flex; align-items: center; gap: 14px; background: var(--glass);
+  border: 1px solid var(--glass-brd); border-radius: 16px; padding: 13px 16px; margin-bottom: 10px; }
+.cl-prank__body { flex: 1; min-width: 0; }
+.cl-prank__top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.cl-prank__name { flex: 1; min-width: 0; font-size: 14px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-prank__cat { flex-shrink: 0; font-size: 10.5px; color: var(--accent); background: var(--accent-dim);
+  padding: 2px 8px; border-radius: 999px; }
+.cl-prank__bar { height: 6px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.cl-prank__bar span { display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
+.cl-prank__meta { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+
 /* ---- 모바일 대응 ---- */
 @media (max-width: 480px) {
   .block-container { padding-left: 1rem; padding-right: 1rem; padding-top: 1.4rem; }
@@ -440,6 +605,10 @@ CUSTOM_CSS = """
   .st-key-chatwidget { right: 14px; bottom: 14px; }
   .st-key-chat_fab .stButton > button { width: 52px; height: 52px; font-size: 22px; }
   .cl-chat-body { max-height: 42vh; }
+  .cl-faceid { font-size: 12.5px; padding: 11px 13px; }
+  .cl-prank { padding: 12px 13px; gap: 10px; }
+  .cl-prank__name { font-size: 13px; }
+  .cl-note { font-size: 12.5px; }
 }
 </style>
 """
@@ -517,8 +686,11 @@ def render_diagnose(client: anthropic.Anthropic | None) -> None:
     section_title("AI 피부 진단", "DIAGNOSIS")
 
     if client is None:
-        st.error("ANTHROPIC_API_KEY가 설정되지 않았습니다. Streamlit Secrets를 확인하세요.")
-        return
+        st.markdown(
+            '<div class="cl-note">🔒 <b>Face ID</b>로 얼굴을 인식해 간이 진단을 바로 볼 수 있어요. '
+            'AI 정밀 진단을 켜려면 Streamlit Secrets에 <code>ANTHROPIC_API_KEY</code>를 추가하세요.</div>',
+            unsafe_allow_html=True,
+        )
 
     st.caption("얼굴이 잘 보이도록 밝은 곳에서 촬영하거나 사진을 올려주세요.")
     source = st.radio("입력 방식", ["카메라 촬영", "사진 업로드"], horizontal=True,
@@ -536,18 +708,48 @@ def render_diagnose(client: anthropic.Anthropic | None) -> None:
         if up is not None:
             image_bytes = up.getvalue()
             media_type = up.type or "image/jpeg"
-            st.image(image_bytes, width=240)
 
-    if image_bytes and st.button("이 사진으로 진단하기", type="primary",
-                                 use_container_width=True):
+    # --- Face ID: 얼굴 인식 ---
+    arr, faces = None, []
+    if image_bytes:
+        with st.spinner("Face ID · 얼굴을 인식하는 중..."):
+            try:
+                arr, faces = detect_faces(image_bytes)
+            except Exception:  # noqa: BLE001 - 인식 실패해도 앱은 계속 동작
+                arr, faces = None, []
+
+        if faces:
+            st.markdown(
+                f'<div class="cl-faceid cl-faceid--ok"><span class="cl-faceid__dot"></span>'
+                f'<span>Face ID 인식 완료 · 얼굴 {len(faces)}개 감지됨</span></div>',
+                unsafe_allow_html=True,
+            )
+            st.image(annotate_faces(arr, faces), use_container_width=True)
+        else:
+            st.markdown(
+                '<div class="cl-faceid cl-faceid--warn"><span class="cl-faceid__dot"></span>'
+                '<span>얼굴을 찾지 못했어요. 정면·밝은 곳에서 다시 시도해주세요.</span></div>',
+                unsafe_allow_html=True,
+            )
+            if arr is not None:
+                st.image(arr, use_container_width=True)
+
+    can_diagnose = bool(image_bytes and faces)
+    if st.button("이 사진으로 진단하기", type="primary", use_container_width=True,
+                 disabled=not can_diagnose):
         with st.spinner("피부 상태를 분석하는 중..."):
             try:
-                result = diagnose_skin(client, image_bytes, media_type)
-                st.session_state.last_diagnosis = result
+                if client is not None:
+                    st.session_state.last_diagnosis = diagnose_skin(
+                        client, image_bytes, media_type)
+                else:
+                    st.session_state.last_diagnosis = local_diagnose(arr, faces)
             except json.JSONDecodeError:
-                st.error("AI 응답을 해석하지 못했습니다. 다시 시도해주세요.")
-            except anthropic.APIError as e:
-                st.error(f"AI 호출 중 오류가 발생했습니다: {e}")
+                st.session_state.last_diagnosis = local_diagnose(arr, faces)
+                st.warning("AI 응답을 해석하지 못해 Face ID 간이 분석으로 대체했어요.")
+            except anthropic.APIError:
+                st.session_state.last_diagnosis = local_diagnose(arr, faces)
+                st.warning("AI 연결에 문제가 있어 Face ID 간이 분석으로 대체했어요.")
             except Exception as e:  # noqa: BLE001
                 st.error(f"알 수 없는 오류: {e}")
 
@@ -606,14 +808,42 @@ def render_ranking() -> None:
             unsafe_allow_html=True,
         )
 
+    # --- 많이 쓰는 화장품 랭킹 ---
+    st.markdown('<div class="cl-sec">MOST USED</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">많이 쓰는 화장품 랭킹</div>', unsafe_allow_html=True)
+    st.caption("우리 동네 남자들이 지금 가장 많이 쓰는 아이템이에요.")
+
+    products = sorted(MOCK_PRODUCT_RANKING, key=lambda x: x["users"], reverse=True)
+    top_users = products[0]["users"]
+    for rank, p in enumerate(products, start=1):
+        pct = round(p["users"] / top_users * 100)
+        query = p["name"].replace(" ", "+")
+        link = ("https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query="
+                + query)
+        st.markdown(
+            f'<div class="cl-prank">'
+            f'<div class="cl-rank__num">{rank}</div>'
+            f'<div class="cl-prank__body">'
+            f'<div class="cl-prank__top"><span class="cl-prank__name">{p["name"]}</span>'
+            f'<span class="cl-prank__cat">{p["category"]}</span></div>'
+            f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
+            f'<div class="cl-prank__meta">{p["users"]:,}명 사용 · '
+            f'<a class="cl-rank__link" target="_blank" rel="noopener" href="{link}">올리브영 →</a>'
+            f'</div></div></div>',
+            unsafe_allow_html=True,
+        )
+
 
 def render_event(client: anthropic.Anthropic | None) -> None:
     back_button()
     section_title("D-day 케어 모드", "D-DAY")
 
     if client is None:
-        st.error("ANTHROPIC_API_KEY가 설정되지 않았습니다. Streamlit Secrets를 확인하세요.")
-        return
+        st.markdown(
+            '<div class="cl-note">📅 <b>간이 루틴</b>은 API 키 없이도 바로 만들어드려요. '
+            'AI 맞춤 루틴을 켜려면 Streamlit Secrets에 <code>ANTHROPIC_API_KEY</code>를 추가하세요.</div>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown('<div class="cl-sec">어떤 이벤트를 준비하시나요?</div>', unsafe_allow_html=True)
     event_key = st.radio(
@@ -635,19 +865,26 @@ def render_event(client: anthropic.Anthropic | None) -> None:
             "concerns": ["일반 컨디션 관리"],
             "summary": "아직 피부 진단을 하지 않았어요.",
         }
+        event_label = EVENT_LABELS.get(event_key, event_key)
         with st.spinner("맞춤 루틴을 짜는 중..."):
             try:
-                result = generate_routine(
-                    client, EVENT_LABELS.get(event_key, event_key), days_left, diagnosis)
-                result["days_left"] = days_left
-                result["event_label"] = EVENT_LABELS.get(event_key, event_key)
-                st.session_state.last_routine = result
+                if client is not None:
+                    result = generate_routine(client, event_label, days_left, diagnosis)
+                else:
+                    result = local_routine(event_label, days_left, diagnosis)
             except json.JSONDecodeError:
-                st.error("AI 응답을 해석하지 못했습니다. 다시 시도해주세요.")
-            except anthropic.APIError as e:
-                st.error(f"AI 호출 중 오류가 발생했습니다: {e}")
+                result = local_routine(event_label, days_left, diagnosis)
+                st.warning("AI 응답을 해석하지 못해 간이 루틴으로 대체했어요.")
+            except anthropic.APIError:
+                result = local_routine(event_label, days_left, diagnosis)
+                st.warning("AI 연결에 문제가 있어 간이 루틴으로 대체했어요.")
             except Exception as e:  # noqa: BLE001
+                result = None
                 st.error(f"알 수 없는 오류: {e}")
+            if result is not None:
+                result["days_left"] = days_left
+                result["event_label"] = event_label
+                st.session_state.last_routine = result
 
     routine = st.session_state.get("last_routine")
     if routine:
