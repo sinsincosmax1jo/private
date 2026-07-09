@@ -18,6 +18,7 @@ import os
 import re
 import html
 import json
+import time
 import base64
 import random
 from io import BytesIO
@@ -398,7 +399,7 @@ CUSTOM_CSS = """
   font-family: 'Material Symbols Rounded' !important;
   word-break: normal; overflow-wrap: normal;
 }
-.block-container { max-width: 560px; padding-top: 2.2rem; padding-bottom: 4rem; }
+.block-container { max-width: 560px; padding-top: 2.2rem; padding-bottom: 7rem; }
 #MainMenu, header, footer { visibility: hidden; }
 
 /* ---- 브랜드 / 히어로 ---- */
@@ -530,11 +531,28 @@ CUSTOM_CSS = """
 .cl-routine__day { font-family: 'Space Grotesk', monospace; color: var(--accent); font-weight: 700;
   flex-shrink: 0; min-width: 44px; }
 
+/* ---- 하단 탭 내비게이션 ---- */
+.st-key-bottomnav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 9998;
+  background: rgba(10, 14, 19, 0.96); backdrop-filter: blur(16px);
+  border-top: 1px solid var(--glass-brd);
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+}
+.st-key-bottomnav [data-testid="stHorizontalBlock"] { max-width: 560px; margin: 0 auto; gap: 8px; }
+.st-key-bottomnav .stButton > button {
+  border: 0; background: transparent; color: var(--muted);
+  font-weight: 700; font-size: 13px; border-radius: 12px; box-shadow: none;
+}
+.st-key-bottomnav .stButton > button:hover { color: var(--text); border: 0; }
+.st-key-bottomnav .stButton > button[kind="primary"] {
+  background: var(--accent-dim); color: var(--accent); box-shadow: none;
+}
+
 /* ---- 플로팅 채팅봇 (우측 하단) ---- */
 .st-key-chatwidget {
   /* 넓은 화면에선 본문(560px) 컬럼 오른쪽 가장자리에 맞춰 가운데쪽으로,
      좁은 화면에선 화면 끝 16px 로 자동 조정 */
-  position: fixed; right: max(16px, calc(50% - 272px)); bottom: 22px; z-index: 9999;
+  position: fixed; right: max(16px, calc(50% - 272px)); bottom: 88px; z-index: 9999;
   width: auto; max-width: calc(100vw - 28px);
 }
 /* 열린 상태의 채팅 카드 - 불투명 배경으로 본문과 겹쳐 글자가 비치는 문제 방지 */
@@ -673,7 +691,7 @@ CUSTOM_CSS = """
   .cl-result__score { font-size: 52px; }
   .cl-countdown__dday { font-size: 42px; }
   [class*="st-key-navbtn_"] .stButton > button p:nth-of-type(2) { font-size: 19px; }
-  .st-key-chatwidget { right: 14px; bottom: 14px; }
+  .st-key-chatwidget { right: 14px; bottom: 82px; }
   .st-key-chat_fab .stButton > button { width: 52px; height: 52px; font-size: 22px; }
   .cl-chat-body { max-height: 42vh; }
   .cl-faceid { font-size: 12.5px; padding: 11px 13px; }
@@ -736,6 +754,21 @@ def section_title(title: str, tag: str) -> None:
     st.markdown(f'<div class="cl-h">{title}</div>', unsafe_allow_html=True)
 
 
+def render_header() -> None:
+    """상단 브랜드 바 + 로그아웃 (모든 화면 공통)."""
+    top_l, top_r = st.columns([3, 1])
+    with top_l:
+        st.markdown(
+            '<div class="cl-topbrand">clozkin'
+            '<span>SKINCARE, MANDATORY FOR MEN</span></div>',
+            unsafe_allow_html=True,
+        )
+    with top_r:
+        with st.container(key="logout"):
+            st.button("로그아웃", key="btn_logout", on_click=_logout,
+                      use_container_width=True)
+
+
 def render_age_diagnosis() -> None:
     """나이 + 피부 상태 체크 후 촬영하면 (랜덤) 점수를 내고 랭킹에 반영한다."""
     st.markdown('<div class="cl-sec">DIAGNOSIS</div>', unsafe_allow_html=True)
@@ -760,6 +793,8 @@ def render_age_diagnosis() -> None:
         st.caption("📸 얼굴이 잘 보이도록 정면에서 촬영해주세요.")
         shot = st.camera_input("피부 촬영", label_visibility="collapsed")
         if shot is not None:
+            with st.spinner("AI가 피부를 분석하는 중이에요..."):
+                time.sleep(3)
             st.session_state.last_diagnosis = random_diagnose(
                 int(age), moisture, tone, flush, extra)
             st.session_state.show_camera = False
@@ -823,22 +858,7 @@ def _person_row(rank: int, entry: dict, value_html: str) -> None:
 
 
 def render_ranking() -> None:
-    # 상단 브랜드 바 + 로그아웃
-    top_l, top_r = st.columns([3, 1])
-    with top_l:
-        st.markdown(
-            '<div class="cl-topbrand">clozkin'
-            '<span>SKINCARE, MANDATORY FOR MEN</span></div>',
-            unsafe_allow_html=True,
-        )
-    with top_r:
-        with st.container(key="logout"):
-            st.button("로그아웃", key="btn_logout", on_click=_logout,
-                      use_container_width=True)
-
-    # AI 피부 진단 (나이 입력 → 랜덤 결과)
-    render_age_diagnosis()
-
+    render_header()
     section_title("우리 동네 피부 랭킹", "RANKING")
     render_nearby_map()
 
@@ -893,6 +913,45 @@ def render_ranking() -> None:
         )
 
 
+def render_diagnosis_screen() -> None:
+    render_header()
+    render_age_diagnosis()
+
+
+def render_home_screen() -> None:
+    render_header()
+    uri = logo_data_uri()
+    if uri:
+        st.markdown(
+            f'<div class="cl-logo-wrap"><img class="cl-logo" src="{uri}" alt="clozkin"></div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown(
+        '<h1 class="cl-hero__title">세안 다음은,<br>'
+        '<span class="cl-grad">당연히 스킨케어.</span></h1>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p class="cl-hero__sub">토너·세럼 순서 몰라도 괜찮아요.<br>'
+        '내 피부를 진단하고, 우리 동네 랭킹에서 딱 맞는 아이템을 찾아보세요.</p>',
+        unsafe_allow_html=True,
+    )
+
+    diagnosis = st.session_state.get("last_diagnosis")
+    if diagnosis and diagnosis.get("summary"):
+        st.markdown(
+            f'<div class="cl-status-wrap"><div class="cl-status">'
+            f'<b>최근 진단 {diagnosis.get("score", "-")}점</b> · {diagnosis["summary"]}'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.button("피부 진단 하러가기", type="primary", use_container_width=True,
+              on_click=set_nav, args=("diagnose",))
+    st.button("우리 동네 랭킹 보기", use_container_width=True,
+              on_click=set_nav, args=("ranking",))
+
+
 def build_dday_message(client: anthropic.Anthropic | None,
                        event_label: str, days_left: int) -> str:
     """D-day 케어 루틴을 만들어 챗봇 말풍선용 텍스트로 반환 (챗봇 기능)."""
@@ -923,6 +982,21 @@ def build_dday_message(client: anthropic.Anthropic | None,
             lines.append(f"• {p.get('name', '')} — {p.get('reason', '')}")
         lines.append("(제품은 랭킹 화면에서 올리브영·최저가로 바로 살 수 있어요)")
     return "\n".join(lines)
+
+
+def set_nav(screen: str) -> None:
+    st.session_state.nav = screen
+
+
+def render_bottom_nav(active: str) -> None:
+    """하단 고정 탭 내비게이션 (홈 / 랭킹 / 진단)."""
+    items = [("home", "🏠", "홈"), ("ranking", "🏆", "랭킹"), ("diagnose", "✨", "진단")]
+    with st.container(key="bottomnav"):
+        cols = st.columns(len(items))
+        for col, (key, icon, label) in zip(cols, items):
+            col.button(f"{icon} {label}", key=f"nav_{key}", on_click=set_nav,
+                       args=(key,), use_container_width=True,
+                       type="primary" if active == key else "secondary")
 
 
 # 빠른 질문 추천 칩 (초보자가 바로 누를 수 있는 예시 질문)
@@ -1061,8 +1135,16 @@ def main() -> None:
         render_login()
         return
 
-    # 로그인 후에는 곧바로 '우리 동네 랭킹' 화면 (메뉴 없음)
-    render_ranking()
+    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단)
+    nav = st.session_state.get("nav", "home")
+    if nav == "ranking":
+        render_ranking()
+    elif nav == "diagnose":
+        render_diagnosis_screen()
+    else:
+        render_home_screen()
+
+    render_bottom_nav(nav)
     render_chat_widget(client)
 
 
