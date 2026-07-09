@@ -618,6 +618,9 @@ CUSTOM_CSS = """
 }
 .stTextInput input:focus, .stNumberInput input:focus { border-color: var(--accent); box-shadow: none; }
 
+/* 카메라 프리뷰를 거울(좌우반전) 모드로 - 셀피처럼 자연스럽게 */
+.stApp [data-testid="stCameraInput"] video { transform: scaleX(-1); }
+
 /* D-day 케어 모드(챗봇 안 확장 패널) */
 .st-key-chat_dday { padding: 0 12px; }
 .st-key-chat_dday [data-testid="stExpander"] {
@@ -713,9 +716,19 @@ def render_age_diagnosis() -> None:
         age = st.number_input("나이", min_value=10, max_value=90, value=28, step=1,
                               label_visibility="collapsed")
     with col_b:
-        run = st.button("내 피부 진단받기", type="primary", use_container_width=True)
+        run = st.button("피부 진단받기", type="primary", use_container_width=True)
     if run:
-        st.session_state.last_diagnosis = random_diagnose(int(age))
+        st.session_state.show_camera = True
+        st.session_state.pop("last_diagnosis", None)  # 새 진단 시작 - 이전 결과 초기화
+
+    # 진단 버튼을 누르면 카메라가 뜨고, 촬영하면 랜덤 점수를 낸다.
+    if st.session_state.get("show_camera"):
+        st.caption("📸 얼굴이 잘 보이도록 정면에서 촬영해주세요.")
+        shot = st.camera_input("피부 촬영", label_visibility="collapsed")
+        if shot is not None:
+            st.session_state.last_diagnosis = random_diagnose(int(age))
+            st.session_state.show_camera = False
+            st.rerun()
 
     result = st.session_state.get("last_diagnosis")
     if result:
