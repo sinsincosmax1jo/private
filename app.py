@@ -377,6 +377,33 @@ def slime_data_uri(size: int = 96) -> str | None:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+# 픽셀 버블 색상 팔레트 (민트 계열)
+_BUBBLE_COLORS = ["rgba(67,211,176,{a})", "rgba(94,234,212,{a})", "rgba(163,217,119,{a})"]
+
+
+def render_max_loading(message: str) -> None:
+    """대표 캐릭터 max가 둥둥 뜨고 뒤로 픽셀 버블이 올라오는 스플래시 오버레이."""
+    uri = slime_data_uri(200)
+    bubbles = ""
+    for _ in range(28):
+        left = random.randint(0, 98)
+        size = random.randint(6, 20)
+        dur = random.uniform(2.4, 5.8)
+        delay = random.uniform(0.0, 2.6)
+        color = random.choice(_BUBBLE_COLORS).format(a=f"{random.uniform(0.25, 0.75):.2f}")
+        bubbles += (
+            f'<span class="cl-bubble" style="left:{left}%;width:{size}px;height:{size}px;'
+            f'background:{color};animation-duration:{dur:.1f}s;animation-delay:{delay:.1f}s"></span>'
+        )
+    char = (f'<img class="cl-splash__max" src="{uri}" alt="max">' if uri
+            else '<div class="cl-splash__max" style="font-size:80px">🫧</div>')
+    st.markdown(
+        f'<div class="cl-splash"><div class="cl-splash__bubbles">{bubbles}</div>'
+        f'{char}<div class="cl-splash__msg">{message}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _extract_json(text: str) -> dict:
     """모델 응답에서 JSON 블록만 안전하게 추출."""
     text = text.strip()
@@ -737,13 +764,17 @@ CUSTOM_CSS = """
 
 /* ---- 하단 탭 내비게이션 ---- */
 .st-key-bottomnav {
-  /* 본문(430px, 가운데 정렬) 폭에 맞춰 하단 탭바도 같은 폭으로 */
-  position: fixed; left: max(0px, calc(50% - 215px)); right: max(0px, calc(50% - 215px)); bottom: 0; z-index: 9998;
+  /* 폰 프레임(430px, 가운데) 폭에 맞추고, 버튼 묶음을 가운데로 정렬 */
+  position: fixed; left: max(0px, calc(50% - 215px)); right: max(0px, calc(50% - 215px));
+  bottom: 0; z-index: 9998;
   background: rgba(10, 14, 19, 0.96); backdrop-filter: blur(16px);
   border-top: 1px solid var(--glass-brd);
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  display: flex; justify-content: center;
 }
-.st-key-bottomnav [data-testid="stHorizontalBlock"] { max-width: 430px; margin: 0 auto; gap: 8px; }
+.st-key-bottomnav > div { width: 100%; }
+.st-key-bottomnav [data-testid="stVerticalBlock"] { width: 100%; }
+.st-key-bottomnav [data-testid="stHorizontalBlock"] { width: 100%; margin: 0 auto; gap: 6px; }
 .st-key-bottomnav .stButton > button {
   border: 0; background: transparent; color: var(--muted);
   font-weight: 700; font-size: 13px; border-radius: 12px; box-shadow: none;
@@ -949,6 +980,27 @@ CUSTOM_CSS = """
 .cl-rec__name { font-size: 13.5px; font-weight: 700; }
 .cl-rec__reason { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
 
+/* ---- 스플래시 (로딩/로그인) - max 캐릭터 둥둥 + 픽셀 버블 ---- */
+.cl-splash { position: fixed; inset: 0; z-index: 100000; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+  background: radial-gradient(700px 500px at 50% 35%, rgba(67,211,176,0.16), transparent 60%),
+    linear-gradient(160deg, #0b1016, #0f1822); }
+.cl-splash__max { width: 128px; height: auto; image-rendering: pixelated; z-index: 2;
+  filter: drop-shadow(0 18px 34px rgba(67,211,176,0.4));
+  animation: cl-float 2.4s ease-in-out infinite; }
+.cl-splash__msg { z-index: 2; color: var(--text); font-weight: 700; font-size: 15px;
+  letter-spacing: -0.2px; }
+.cl-splash__msg::after { content: ""; }
+.cl-splash__bubbles { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.cl-bubble { position: absolute; bottom: -40px; border-radius: 2px;
+  animation-name: cl-bubble-rise; animation-timing-function: linear;
+  animation-iteration-count: infinite; }
+@keyframes cl-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-24px); } }
+@keyframes cl-bubble-rise {
+  0% { transform: translateY(0) scale(0.8); opacity: 0; }
+  12% { opacity: 0.9; }
+  100% { transform: translateY(-108vh) scale(1.25); opacity: 0; } }
+
 /* ---- 모바일 대응 ---- */
 @media (max-width: 480px) {
   .block-container { padding-left: 1rem; padding-right: 1rem; padding-top: 1.4rem; }
@@ -974,6 +1026,8 @@ CUSTOM_CSS = """
   .cl-map { max-height: 360px; }
   .cl-map__cnt { font-size: 12px; }
   .cl-map__label { font-size: 10px; }
+  .cl-splash__max { width: 104px; }
+  .cl-splash__msg { font-size: 14px; }
 }
 
 /* 폰 화면처럼 보이는 민트색 베젤 - .stApp 자체는 손대지 않고(스크롤/레이아웃 안전),
@@ -1015,6 +1069,7 @@ def consent_dialog() -> None:
     if c1.button("동의", type="primary", use_container_width=True):
         st.session_state.logged_in = True
         st.session_state.consent = True
+        st.session_state.login_loading = True  # 로그인 스플래시(3초) 트리거
         st.session_state.pop("pending_login", None)
         st.rerun()
     if c2.button("비동의", use_container_width=True):
@@ -1567,10 +1622,24 @@ def main() -> None:
     api_key = get_api_key()
     client = get_client(api_key) if api_key else None
 
+    # 앱 최초 로딩 시 3초 스플래시 (max 캐릭터 둥둥 + 픽셀 버블)
+    if not st.session_state.get("splashed"):
+        render_max_loading("clozkin 불러오는 중...")
+        time.sleep(3)
+        st.session_state.splashed = True
+        st.rerun()
+
     # 가짜 로그인 게이트 - 로그인 전에는 로그인 화면만 보여준다.
     if not st.session_state.get("logged_in"):
         render_login()
         return
+
+    # 로그인 직후 3초 스플래시
+    if st.session_state.get("login_loading"):
+        render_max_loading("로그인 중...")
+        time.sleep(3)
+        st.session_state.login_loading = False
+        st.rerun()
 
     # 로고 이미지 클릭 등 URL(?nav=) 로 들어온 화면 전환 반영
     if "nav" in st.query_params:
