@@ -338,6 +338,7 @@ CUSTOM_CSS = """
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
 :root {
   --accent: #43d3b0;
@@ -361,6 +362,12 @@ CUSTOM_CSS = """
   color: var(--text);
   word-break: keep-all;      /* 한글이 음절 단위로 끊기지 않고 어절 단위로 줄바꿈 */
   overflow-wrap: anywhere;   /* 그래도 넘칠 땐 안전하게 줄바꿈 */
+}
+/* 머티리얼 아이콘(비밀번호 표시 눈아이콘·확장 화살표 등)이 전역 폰트에 덮여
+   'visibility' 같은 글자로 보이지 않도록 아이콘 폰트를 되돌려준다 */
+.stApp span[data-testid="stIconMaterial"] {
+  font-family: 'Material Symbols Rounded' !important;
+  word-break: normal; overflow-wrap: normal;
 }
 .block-container { max-width: 560px; padding-top: 2.2rem; padding-bottom: 4rem; }
 #MainMenu, header, footer { visibility: hidden; }
