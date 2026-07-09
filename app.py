@@ -69,13 +69,13 @@ _RECOMMENDED_INGREDIENTS = {
 # 우리 동네 피부 랭킹 - 목업 데이터 (실제 서비스에서는 DB에서 조회)
 # ---------------------------------------------------------------------------
 MOCK_RANKING = [
-    {"name": "김O우", "score": 91, "gain": 7, "product": "라운드랩 자작나무 수분 크림"},
-    {"name": "이O훈", "score": 87, "gain": 12, "product": "아누아 어성초 77 토너"},
-    {"name": "박O진", "score": 83, "gain": 5, "product": "달바 백자 크림"},
-    {"name": "최O민", "score": 79, "gain": 15, "product": "라로슈포제 시카플라스트"},
-    {"name": "정O석", "score": 74, "gain": 9, "product": "닥터지 블랙스네일 크림"},
-    {"name": "강O우", "score": 68, "gain": 18, "product": "센카 퍼펙트 워터 클렌징"},
-    {"name": "조O현", "score": 63, "gain": 3, "product": "이니스프리 그린티 세럼"},
+    {"name": "김민우", "age_group": "20대", "score": 91, "gain": 7, "product": "라운드랩 자작나무 수분 크림"},
+    {"name": "이준호", "age_group": "30대", "score": 87, "gain": 12, "product": "아누아 어성초 77 토너"},
+    {"name": "박서진", "age_group": "20대", "score": 83, "gain": 5, "product": "달바 워터풀 에센스 선크림"},
+    {"name": "최도현", "age_group": "30대", "score": 79, "gain": 15, "product": "라로슈포제 시카플라스트 밤 B5"},
+    {"name": "정우석", "age_group": "40대", "score": 74, "gain": 9, "product": "닥터지 블랙 스네일 크림"},
+    {"name": "강태오", "age_group": "10대", "score": 68, "gain": 18, "product": "세타필 데일리 클렌저"},
+    {"name": "조현우", "age_group": "20대", "score": 63, "gain": 3, "product": "이니스프리 그린티 씨드 세럼"},
 ]
 
 # 많이 쓰는 화장품 랭킹 - 목업 데이터 (users = 동네 사용자 수)
@@ -103,14 +103,17 @@ MOCK_PURCHASES = [
 # 쇼핑몰별 대표 색상
 SITE_COLORS = {"올리브영": "#a3d977", "네이버": "#03c75a", "쿠팡": "#f7541f", "무신사": "#d9dde1"}
 
-# 피부 우수자(고점수) 지역 분포 - 목업 데이터
-MOCK_DISTRICTS = [
-    {"area": "강남구", "count": 128},
-    {"area": "서초구", "count": 112},
-    {"area": "송파구", "count": 97},
-    {"area": "마포구", "count": 84},
-    {"area": "성동구", "count": 71},
-    {"area": "용산구", "count": 63},
+# 피부 좋은 남자들 전국 분포 - 목업 데이터 (x/y = 지도 박스 내 % 위치)
+MOCK_REGIONS = [
+    {"name": "서울", "count": 342, "x": 39, "y": 20},
+    {"name": "경기", "count": 288, "x": 45, "y": 29},
+    {"name": "인천", "count": 121, "x": 29, "y": 25},
+    {"name": "강원", "count": 76, "x": 67, "y": 19},
+    {"name": "대전", "count": 134, "x": 45, "y": 47},
+    {"name": "대구", "count": 118, "x": 67, "y": 53},
+    {"name": "부산", "count": 156, "x": 74, "y": 68},
+    {"name": "광주", "count": 98, "x": 33, "y": 66},
+    {"name": "제주", "count": 41, "x": 33, "y": 92},
 ]
 
 EVENT_LABELS = {
@@ -355,6 +358,22 @@ def logo_data_uri(size: int = 300) -> str | None:
     result = Image.fromarray(out.astype(np.uint8), "RGBA")
     buf = BytesIO()
     result.save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+SLIME_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mint_pixel_slime.png")
+
+
+@st.cache_data(show_spinner=False)
+def slime_data_uri(size: int = 96) -> str | None:
+    """귀여운 슬라임 마스코트 이미지를 data URI로 반환 (지도 마커용)."""
+    try:
+        img = Image.open(SLIME_PATH).convert("RGBA")
+    except (OSError, FileNotFoundError):
+        return None
+    img.thumbnail((size, size), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
@@ -878,6 +897,39 @@ CUSTOM_CSS = """
 
 /* 카메라 프리뷰를 거울(좌우반전) 모드로 - 셀피처럼 자연스럽게 */
 .stApp [data-testid="stCameraInput"] video { transform: scaleX(-1); }
+/* 얼굴 크기 가이드 - 카메라 프리뷰 위에 점선 원 오버레이 */
+.stApp [data-testid="stCameraInput"] div:has(> video) { position: relative; }
+.stApp [data-testid="stCameraInput"] div:has(> video)::after {
+  content: ""; position: absolute; inset: 0; margin: auto;
+  width: 56%; height: 80%; border: 3px dashed rgba(94, 234, 212, 0.9);
+  border-radius: 50%; pointer-events: none;
+  box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.18);
+}
+
+/* 나이대 배지 (랭킹) */
+.cl-agechip { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700;
+  padding: 1px 7px; border-radius: 999px; color: var(--accent); background: var(--accent-dim);
+  vertical-align: middle; }
+
+/* ---- 전국 피부 지도 (귀여운 슬라임 마커 + 숫자) ---- */
+.cl-map { position: relative; width: 100%; aspect-ratio: 3 / 4; max-height: 440px;
+  border-radius: 24px; overflow: hidden; border: 1px solid var(--glass-brd);
+  margin: 4px 0 6px;
+  background:
+    radial-gradient(140px 140px at 38% 24%, rgba(67, 211, 176, 0.20), transparent 70%),
+    radial-gradient(180px 180px at 66% 66%, rgba(94, 234, 212, 0.14), transparent 70%),
+    radial-gradient(120px 120px at 30% 88%, rgba(67, 211, 176, 0.12), transparent 70%),
+    linear-gradient(160deg, #0f1822, #0b1016); }
+.cl-map__pin { position: absolute; transform: translate(-50%, -50%); text-align: center;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.4)); }
+.cl-map__slime { display: block; margin: 0 auto; image-rendering: pixelated; }
+.cl-map__dot { border-radius: 50%; margin: 0 auto;
+  background: linear-gradient(115deg, var(--accent-2), var(--accent)); }
+.cl-map__cnt { font-family: 'Space Grotesk', monospace; font-weight: 700; font-size: 13px;
+  color: var(--accent); }
+.cl-map__label { font-size: 11px; font-weight: 700; color: var(--text); margin-top: 2px; }
+.cl-map__pin--top .cl-map__cnt { color: var(--accent-2); font-size: 15px; }
+.cl-map__pin--top .cl-map__label { color: var(--accent-2); }
 
 /* AI 피부 분석 중(st.spinner) 로딩 원형 아이콘을 민트색으로 */
 .stApp [data-testid="stSpinner"] .ewh6kot0 {
@@ -919,6 +971,9 @@ CUSTOM_CSS = """
   .cl-shop-btn svg, .cl-price-btn svg { width: 15px; height: 15px; }
   .cl-rank { gap: 9px; padding: 12px 12px; }
   .st-key-chatcard { width: min(340px, calc(100vw - 24px)); }
+  .cl-map { max-height: 360px; }
+  .cl-map__cnt { font-size: 12px; }
+  .cl-map__label { font-size: 10px; }
 }
 
 /* 폰 화면처럼 보이는 민트색 베젤 - .stApp 자체는 손대지 않고(스크롤/레이아웃 안전),
@@ -1034,19 +1089,25 @@ def render_header() -> None:
         with st.container(key="logohome"):
             uri = logo_data_uri()
             if uri:
+                # 버튼을 로고 '이미지'로만 보이게 (글자 숨김) + 클릭 시 홈 이동
                 st.markdown(
-                    f"<style>.st-key-logohome .stButton button "
-                    f"{{background-image: url('{uri}') !important;}}</style>",
+                    "<style>.st-key-logohome .stButton>button{"
+                    f"background:url('{uri}') left center/contain no-repeat !important;"
+                    "height:46px;width:100%;border:0!important;box-shadow:none!important;"
+                    "background-color:transparent!important;color:transparent!important;"
+                    "font-size:0!important;padding:0!important;}"
+                    ".st-key-logohome .stButton>button:hover{filter:brightness(1.12);}"
+                    "</style>",
                     unsafe_allow_html=True,
                 )
             else:
                 st.markdown(
-                    "<style>.st-key-logohome .stButton button "
-                    "{color: var(--text) !important; font-size: 19px !important; "
-                    "font-weight: 800;}</style>",
+                    "<style>.st-key-logohome .stButton>button{border:0!important;"
+                    "background:transparent!important;color:var(--text)!important;"
+                    "font-size:19px!important;font-weight:800;box-shadow:none!important;}</style>",
                     unsafe_allow_html=True,
                 )
-            st.button("clozkin 홈", key="btn_logo_home", on_click=set_nav, args=("home",))
+            st.button("clozkin", key="btn_logo_home", on_click=set_nav, args=("home",))
     with top_r:
         with st.container(key="logout"):
             st.button("로그아웃", key="btn_logout", on_click=_logout,
@@ -1074,7 +1135,9 @@ def render_age_diagnosis() -> None:
 
     # 진단 버튼을 누르면 카메라가 뜨고, 촬영한 이미지로 로컬 CNN 모델이 결과를 만든다.
     if st.session_state.get("show_camera"):
-        st.caption("📸 얼굴이 잘 보이도록 정면에서 촬영해주세요.")
+        st.caption("📸 얼굴이 잘 보이도록 **정면**에서 촬영해주세요. "
+                   "매번 최대한 **비슷한 공간(조명·배경)**에서 찍으면 피부 변화를 더 정확하게 볼 수 있어요.")
+        st.caption("👤 화면의 점선 원 안에 얼굴을 꽉 차게 맞춰주세요.")
         shot = st.camera_input("피부 촬영", label_visibility="collapsed")
         if shot is not None:
             with st.spinner("AI가 피부를 분석하는 중이에요..."):
@@ -1083,12 +1146,14 @@ def render_age_diagnosis() -> None:
             st.session_state.last_diagnosis = result
             # 진단 기록을 사이트 전체에 누적 저장 (랭킹에 반영)
             rec_id = time.time_ns()
+            recs = recommend_products(result)
             save_record({
                 "id": rec_id,
-                "name": mask_name(st.session_state.get("user_name", "")),
+                "name": (st.session_state.get("user_name") or "").strip() or "익명",
+                "age_group": f"{(int(age) // 10) * 10}대",
                 "score": result["score"],
                 "gain": max(2, min(16, 100 - result["score"])),
-                "product": (result.get("recommended_ingredients") or ["-"])[0],
+                "product": recs[0]["name"] if recs else "-",
             })
             st.session_state.my_record_id = rec_id
             st.session_state.show_camera = False
@@ -1097,9 +1162,6 @@ def render_age_diagnosis() -> None:
     result = st.session_state.get("last_diagnosis")
     if result:
         concerns = "".join(f"<span>{c}</span>" for c in result.get("concerns", []))
-        ingredients = "".join(
-            f"<span>#{c}</span>" for c in result.get("recommended_ingredients", [])
-        )
         st.markdown(
             f'<div class="cl-result">'
             f'<p class="cl-result__label">SKIN SCORE</p>'
@@ -1107,7 +1169,6 @@ def render_age_diagnosis() -> None:
             f'<p class="cl-result__type">피부 타입 · {result.get("skin_type", "-")}</p>'
             f'<p class="cl-result__summary">{result.get("summary", "")}</p>'
             f'<div class="cl-chips">{concerns}</div>'
-            f'<div class="cl-chips cl-chips--accent">{ingredients}</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -1125,28 +1186,29 @@ def render_age_diagnosis() -> None:
             )
 
 
-def render_nearby_map() -> None:
-    """GPS 위치를 받아 내 주변 사용자 분포를 간단한 지도로 보여준다."""
-    st.markdown('<div class="cl-sec">NEARBY</div>', unsafe_allow_html=True)
-    st.markdown('<div class="cl-h">내 주변 피부 랭킹 지도</div>', unsafe_allow_html=True)
+def render_skin_map() -> None:
+    """피부 좋은 남자들의 전국 분포를 귀여운 아이콘 지도로 보여준다 (숫자 표시)."""
+    st.markdown('<div class="cl-sec">SKIN MAP</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">피부 좋은 남자들, 어디 많을까?</div>', unsafe_allow_html=True)
+    st.caption("지역별 피부 우수자 수예요. 슬라임이 클수록 피부 좋은 남자가 많아요 🫧")
 
-    lat = lon = None
-    if _HAS_GEO:
-        st.caption("아래 위치 버튼을 누르면 내 주변 사용자 분포를 지도로 볼 수 있어요.")
-        loc = streamlit_geolocation()
-        if isinstance(loc, dict):
-            lat, lon = loc.get("latitude"), loc.get("longitude")
-    else:
-        st.caption("위치 컴포넌트를 불러오지 못해 기본 위치(서울 강남)로 표시해요.")
-
-    legend = "🟢 나 · ⚪ 주변 사용자 · 🔴 주변 피부과"
-    if lat and lon:
-        st.map(nearby_points(lat, lon), color="color", size="size", zoom=13)
-        st.caption(f"📍 현재 위치 기준 · {legend} (위도 {lat:.4f}, 경도 {lon:.4f})")
-    else:
-        # 위치 미허용 시 기본 위치(서울 강남역)로 예시 지도
-        st.map(nearby_points(37.4979, 127.0276), color="color", size="size", zoom=13)
-        st.caption(f"{legend} · 위치 권한을 허용하면 실제 내 주변으로 바뀌어요. (지금은 예시 위치)")
+    slime = slime_data_uri()
+    mx = max(r["count"] for r in MOCK_REGIONS)
+    ranked = sorted(MOCK_REGIONS, key=lambda x: x["count"], reverse=True)
+    pins = ""
+    for i, r in enumerate(ranked):
+        w = 34 + round(r["count"] / mx * 30)  # 34~64px
+        top = " cl-map__pin--top" if i == 0 else ""
+        icon = (f'<img class="cl-map__slime" src="{slime}" style="width:{w}px">'
+                if slime else
+                f'<div class="cl-map__dot" style="width:{w}px;height:{w}px"></div>')
+        pins += (
+            f'<div class="cl-map__pin{top}" style="left:{r["x"]}%;top:{r["y"]}%">'
+            f'<div class="cl-map__cnt">{r["count"]}</div>'
+            f'{icon}'
+            f'<div class="cl-map__label">{r["name"]}</div></div>'
+        )
+    st.markdown(f'<div class="cl-map">{pins}</div>', unsafe_allow_html=True)
 
 
 def _person_row(rank: int, entry: dict, value_html: str) -> None:
@@ -1155,7 +1217,8 @@ def _person_row(rank: int, entry: dict, value_html: str) -> None:
         f'<div class="cl-rank {"is-me" if entry.get("is_me") else ""}">'
         f'<div class="cl-rank__num">{rank}</div>'
         f'<div class="cl-rank__body">'
-        f'<div class="cl-rank__name">{entry["name"]}</div>'
+        f'<div class="cl-rank__name">{entry["name"]}'
+        f'<span class="cl-agechip">{entry.get("age_group", "-")}</span></div>'
         f'<div class="cl-rank__product">{entry["product"]}</div></div>'
         f'{value_html}'
         f'{buy_buttons(entry["product"])}'
@@ -1167,7 +1230,7 @@ def _person_row(rank: int, entry: dict, value_html: str) -> None:
 def render_ranking() -> None:
     render_header()
     section_title("우리 동네 피부 랭킹", "RANKING")
-    render_nearby_map()
+    render_skin_map()
 
     # 목업 + 누적된 실제 진단 기록을 합쳐 랭킹 구성
     records = load_records()
@@ -1176,50 +1239,50 @@ def render_ranking() -> None:
     for r in records:
         board.append({
             "name": r.get("name", "익명"),
+            "age_group": r.get("age_group", "-"),
             "score": int(r.get("score", 0)),
             "gain": int(r.get("gain", 0)),
             "product": r.get("product", "-"),
             "is_me": r.get("id") == my_id,
         })
 
+    st.markdown('<div class="cl-sec">RANKING</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">피부 점수 랭킹</div>', unsafe_allow_html=True)
     st.caption(f"지금까지 {len(MOCK_RANKING) + len(records):,}명이 진단에 참여했어요. "
                "(진단할수록 기록이 쌓여요)")
+
+    # 나이대 필터
+    groups = ["전체", "10대", "20대", "30대", "40대", "50대 이상"]
+    picked = st.radio("나이대", groups, horizontal=True, label_visibility="collapsed")
+
+    def _in_group(e: dict) -> bool:
+        if picked == "전체":
+            return True
+        if picked == "50대 이상":
+            return e.get("age_group") in ("50대", "60대", "70대", "80대", "90대")
+        return e.get("age_group") == picked
+
+    view = [e for e in board if _in_group(e)]
 
     tab_score, tab_gain = st.tabs(["🏆 피부 점수 순위", "📈 28일 상승 순위"])
 
     with tab_score:
         st.caption("현재 피부 점수가 높은 순이에요.")
+        if not view:
+            st.caption("이 나이대에는 아직 기록이 없어요.")
         for rank, entry in enumerate(
-                sorted(board, key=lambda x: x["score"], reverse=True), start=1):
+                sorted(view, key=lambda x: x["score"], reverse=True), start=1):
             _person_row(rank, entry,
                         f'<div class="cl-rank__score">{entry["score"]}</div>')
 
     with tab_gain:
         st.caption("피부 턴오버 28일 동안 점수가 많이 오른 순이에요. (▲ 상승폭)")
+        if not view:
+            st.caption("이 나이대에는 아직 기록이 없어요.")
         for rank, entry in enumerate(
-                sorted(board, key=lambda x: x.get("gain", 0), reverse=True), start=1):
+                sorted(view, key=lambda x: x.get("gain", 0), reverse=True), start=1):
             _person_row(rank, entry,
                         f'<div class="cl-rank__score cl-rank__gain">▲{entry.get("gain", 0)}</div>')
-
-    # --- 피부 우수자 지역 분포 ---
-    st.markdown('<div class="cl-sec">DISTRIBUTION</div>', unsafe_allow_html=True)
-    st.markdown('<div class="cl-h">피부 좋은 남자들, 어디 많을까?</div>', unsafe_allow_html=True)
-    st.caption("피부 점수 상위 사용자들의 지역 분포예요.")
-
-    districts = sorted(MOCK_DISTRICTS, key=lambda x: x["count"], reverse=True)
-    top_count = districts[0]["count"]
-    for rank, d in enumerate(districts, start=1):
-        pct = round(d["count"] / top_count * 100)
-        st.markdown(
-            f'<div class="cl-prank">'
-            f'<div class="cl-rank__num">{rank}</div>'
-            f'<div class="cl-prank__body">'
-            f'<div class="cl-prank__top"><span class="cl-prank__name">{d["area"]}</span></div>'
-            f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
-            f'<div class="cl-prank__meta">{d["count"]:,}명</div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
 
     # --- 많이 쓰는 화장품 랭킹 ---
     st.markdown('<div class="cl-sec">MOST USED</div>', unsafe_allow_html=True)
