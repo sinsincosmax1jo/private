@@ -1605,7 +1605,16 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
 
         # --- FAB 토글 버튼 ---
         with st.container(key="chat_fab"):
-            st.button("✕" if chat_open else "💬", key="btn_chat_fab",
+            slime_uri = None if chat_open else slime_data_uri(96)
+            if slime_uri:
+                st.markdown(
+                    "<style>.st-key-chat_fab .stButton>button{"
+                    f"background:url('{slime_uri}') center/68% no-repeat, "
+                    "linear-gradient(115deg, var(--accent-2), var(--accent));"
+                    "font-size:0!important;color:transparent!important;}</style>",
+                    unsafe_allow_html=True,
+                )
+            st.button("✕" if chat_open else ("" if slime_uri else "💬"), key="btn_chat_fab",
                       on_click=toggle_chat, help="AI 가이드에게 물어보기")
 
 
