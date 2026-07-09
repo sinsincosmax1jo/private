@@ -64,6 +64,20 @@ MOCK_PRODUCT_RANKING = [
     {"name": "이니스프리 노세범 미네랄 파우더", "category": "피지관리", "users": 689},
 ]
 
+# 구매 내역 - 목업 데이터 (남성용 화장품 / 여러 쇼핑몰)
+MOCK_PURCHASES = [
+    {"site": "올리브영", "product": "라운드랩 자작나무 수분 크림", "date": "2026-06-28", "price": 19800},
+    {"site": "무신사", "product": "그루밍 옴므 올인원 토너", "date": "2026-06-15", "price": 24000},
+    {"site": "쿠팡", "product": "우르오스 스킨워시 클렌저", "date": "2026-06-10", "price": 12900},
+    {"site": "네이버", "product": "닥터지 레드 블레미쉬 수딩 크림", "date": "2026-05-30", "price": 22500},
+    {"site": "올리브영", "product": "토리든 다이브인 저분자 히알루론산 세럼", "date": "2026-05-21", "price": 18700},
+    {"site": "쿠팡", "product": "니베아 맨 센서티브 아프터쉐이브 밤", "date": "2026-05-12", "price": 8900},
+    {"site": "무신사", "product": "메디힐 남성 진정 마스크팩 10매", "date": "2026-04-30", "price": 13500},
+    {"site": "네이버", "product": "라로슈포제 안뗄리오스 선크림", "date": "2026-04-18", "price": 21000},
+]
+# 쇼핑몰별 대표 색상
+SITE_COLORS = {"올리브영": "#a3d977", "네이버": "#03c75a", "쿠팡": "#f7541f", "무신사": "#d9dde1"}
+
 # 피부 우수자(고점수) 지역 분포 - 목업 데이터
 MOCK_DISTRICTS = [
     {"area": "강남구", "count": 128},
@@ -708,19 +722,17 @@ CUSTOM_CSS = """
 .cl-topbrand { font-size: 18px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.1; }
 .cl-topbrand span { display: block; font-family: 'Space Grotesk', monospace; font-size: 8.5px;
   letter-spacing: 1.5px; color: var(--muted); font-weight: 600; margin-top: 3px; }
-/* 로고(브랜드) 버튼 = 홈 이동 */
-.st-key-brandbtn .stButton > button {
-  border: 0; background: transparent; padding: 0; box-shadow: none;
-  font-size: 18px; font-weight: 800; letter-spacing: -0.4px; color: var(--text);
-  text-align: left; line-height: 1.1; min-height: 0;
-}
-.st-key-brandbtn .stButton > button:hover { color: var(--accent); border: 0; }
-.st-key-brandbtn .stButton > button p { margin: 0; }
-.st-key-brandbtn .stButton > button p::after {
-  content: "SKINCARE, MANDATORY FOR MEN"; display: block;
-  font-family: 'Space Grotesk', monospace; font-size: 8.5px; letter-spacing: 1.5px;
-  color: var(--muted); font-weight: 600; margin-top: 3px;
-}
+/* 로고 이미지 = 홈 이동 */
+.cl-logolink { display: inline-block; line-height: 0; }
+.cl-logo-top { height: 44px; width: auto;
+  filter: drop-shadow(0 6px 18px rgba(67, 211, 176, 0.28)); transition: transform 0.2s ease; }
+.cl-logolink:hover .cl-logo-top { transform: scale(1.05); }
+.cl-logolink--text { line-height: 1.1; font-size: 19px; font-weight: 800; color: var(--text);
+  text-decoration: none; }
+
+/* 쇼핑몰 배지 (구매내역) */
+.cl-site { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 8px;
+  border-radius: 999px; border: 1px solid; }
 .st-key-logout .stButton > button { font-size: 12px; font-weight: 600; padding: 8px 6px;
   color: var(--muted); }
 .st-key-logout .stButton > button:hover { color: var(--accent); border-color: var(--accent); }
@@ -857,12 +869,22 @@ def section_title(title: str, tag: str) -> None:
 
 
 def render_header() -> None:
-    """상단 브랜드 바(로고=홈 이동) + 로그아웃 (모든 화면 공통)."""
+    """상단 브랜드 바(로고 이미지=홈 이동) + 로그아웃 (모든 화면 공통)."""
     top_l, top_r = st.columns([3, 1])
     with top_l:
-        with st.container(key="brandbtn"):
-            st.button("clozkin", key="btn_brand", on_click=set_nav, args=("home",),
-                      help="홈으로")
+        uri = logo_data_uri()
+        if uri:
+            st.markdown(
+                f'<a class="cl-logolink" target="_self" href="?nav=home" title="홈으로">'
+                f'<img class="cl-logo-top" src="{uri}" alt="clozkin"></a>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<a class="cl-logolink cl-logolink--text" target="_self" href="?nav=home">'
+                'clozkin</a>',
+                unsafe_allow_html=True,
+            )
     with top_r:
         with st.container(key="logout"):
             st.button("로그아웃", key="btn_logout", on_click=_logout,
@@ -1072,6 +1094,41 @@ def render_diagnosis_screen() -> None:
               use_container_width=True)
 
 
+def render_purchases_screen() -> None:
+    render_header()
+    section_title("구매 내역", "PURCHASES")
+
+    if not st.session_state.get("purchases_synced"):
+        st.markdown(
+            '<div class="cl-note">🔗 올리브영·네이버·쿠팡·무신사에서 구매한 '
+            '남성 화장품 내역을 <b>한 번에</b> 불러올 수 있어요.</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("한번에 연동하기", type="primary", use_container_width=True):
+            with st.spinner("여러 쇼핑몰 계정을 연동하는 중..."):
+                time.sleep(2)
+            st.session_state.purchases_synced = True
+            st.rerun()
+        st.caption("데모 버전이에요. 실제 계정 연동 없이 예시 내역을 보여줍니다.")
+        return
+
+    total = sum(p["price"] for p in MOCK_PURCHASES)
+    st.caption(f"최근 {len(MOCK_PURCHASES)}건 · 총 {total:,}원 · 4개 쇼핑몰 연동됨 ✓")
+    for p in MOCK_PURCHASES:
+        color = SITE_COLORS.get(p["site"], "#43d3b0")
+        st.markdown(
+            f'<div class="cl-rec"><div class="cl-rec__body">'
+            f'<div class="cl-rec__name">{p["product"]}</div>'
+            f'<div class="cl-rec__reason">'
+            f'<span class="cl-site" style="color:{color};border-color:{color}">{p["site"]}</span>'
+            f' · {p["date"]} · {p["price"]:,}원</div></div>'
+            f'{buy_buttons(p["product"])}</div>',
+            unsafe_allow_html=True,
+        )
+    st.button("연동 해제", key="unsync", on_click=lambda: st.session_state.update(
+        purchases_synced=False), use_container_width=True)
+
+
 def render_home_screen() -> None:
     render_header()
     uri = logo_data_uri()
@@ -1144,7 +1201,8 @@ def set_nav(screen: str) -> None:
 
 def render_bottom_nav(active: str) -> None:
     """하단 고정 탭 내비게이션 (홈 / 랭킹 / 진단)."""
-    items = [("home", "🏠", "홈"), ("ranking", "🏆", "랭킹"), ("diagnose", "✨", "진단")]
+    items = [("home", "🏠", "홈"), ("ranking", "🏆", "랭킹"),
+             ("diagnose", "✨", "진단"), ("purchases", "🛍", "구매")]
     with st.container(key="bottomnav"):
         cols = st.columns(len(items))
         for col, (key, icon, label) in zip(cols, items):
@@ -1289,12 +1347,19 @@ def main() -> None:
         render_login()
         return
 
-    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단)
+    # 로고 이미지 클릭 등 URL(?nav=) 로 들어온 화면 전환 반영
+    if "nav" in st.query_params:
+        st.session_state.nav = st.query_params["nav"]
+        del st.query_params["nav"]
+
+    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단 / 구매)
     nav = st.session_state.get("nav", "home")
     if nav == "ranking":
         render_ranking()
     elif nav == "diagnose":
         render_diagnosis_screen()
+    elif nav == "purchases":
+        render_purchases_screen()
     else:
         render_home_screen()
 
