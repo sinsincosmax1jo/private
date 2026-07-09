@@ -37,6 +37,8 @@ except Exception:  # noqa: BLE001
 
 MODEL_NAME = "claude-sonnet-5"
 LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clozkin_logo.png")
+# 진단 기록을 누적 저장하는 파일 (사이트 전체 랭킹에 반영)
+RECORDS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skin_records.json")
 
 # ---------------------------------------------------------------------------
 # 우리 동네 피부 랭킹 - 목업 데이터 (실제 서비스에서는 DB에서 조회)
@@ -145,7 +147,7 @@ def recommend_products(diagnosis: dict) -> list[dict]:
     items = LOCAL_PRODUCTS.get(diagnosis.get("skin_type", ""), LOCAL_PRODUCTS["복합성"])
     picks = [{"name": n, "reason": why} for n, why in items]
     picks.append({"name": "라로슈포제 안뗄리오스 선크림",
-                  "reason": "이벤트 전 자외선 차단은 기본 중 기본"})
+                  "reason": "자외선 차단은 피부 관리의 기본이에요"})
     return picks[:3]
 
 
@@ -219,6 +221,37 @@ def _text_from_response(response) -> str:
     return "".join(
         block.text for block in response.content if getattr(block, "type", "") == "text"
     )
+
+
+def mask_name(name: str) -> str:
+    """랭킹 노출용 이름 마스킹 (홍길동 -> 홍O동)."""
+    name = (name or "").strip()
+    if len(name) <= 1:
+        return name or "익명"
+    if len(name) == 2:
+        return name[0] + "O"
+    return name[0] + "O" + name[-1]
+
+
+def load_records() -> list:
+    """누적된 진단 기록을 파일에서 읽는다."""
+    try:
+        with open(RECORDS_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def save_record(rec: dict) -> None:
+    """진단 기록 1건을 파일에 누적 저장한다."""
+    records = load_records()
+    records.append(rec)
+    try:
+        with open(RECORDS_PATH, "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +703,9 @@ CUSTOM_CSS = """
 }
 .stTextInput input:focus, .stNumberInput input:focus { border-color: var(--accent); box-shadow: none; }
 
+/* 카메라 프리뷰를 거울(좌우반전) 모드로 - 셀피처럼 자연스럽게 */
+.stApp [data-testid="stCameraInput"] video { transform: scaleX(-1); }
+
 /* D-day 케어 모드(챗봇 안 확장 패널) */
 .st-key-chat_dday { padding: 0 12px; }
 .st-key-chat_dday [data-testid="stExpander"] {
@@ -713,11 +749,34 @@ CUSTOM_CSS = """
 # 화면 렌더링
 # ---------------------------------------------------------------------------
 def _logout() -> None:
-    st.session_state.logged_in = False
+    for k in ("logged_in", "consent", "pending_login", "my_record_id"):
+        st.session_state.pop(k, None)
+
+
+@st.dialog("개인정보 활용 동의")
+def consent_dialog() -> None:
+    """로그인 시 개인정보 활용 동의 팝업 (동의/비동의)."""
+    st.markdown(
+        "더 정확한 추천을 위해 아래 개인정보를 활용해요:\n\n"
+        "- 이름·나이 등 프로필 정보\n"
+        "- 피부 진단 결과 및 피부 정보\n"
+        "- 구매 내역"
+    )
+    st.caption("동의하셔야 서비스를 이용할 수 있어요.")
+    c1, c2 = st.columns(2)
+    if c1.button("동의", type="primary", use_container_width=True):
+        st.session_state.logged_in = True
+        st.session_state.consent = True
+        st.session_state.pop("pending_login", None)
+        st.rerun()
+    if c2.button("비동의", use_container_width=True):
+        st.session_state.consent = False
+        st.session_state.pop("pending_login", None)
+        st.rerun()
 
 
 def render_login() -> None:
-    """가짜 로그인 화면 - 어떤 값을 입력해도 로그인된다 (데모용)."""
+    """로그인 화면 - 이름 입력 + 로그인/회원가입/비회원. 진입 시 개인정보 동의 팝업."""
     uri = logo_data_uri()
     if uri:
         st.markdown(
@@ -739,14 +798,28 @@ def render_login() -> None:
     )
     with st.container(key="loginbox"):
         with st.form(key="login_form"):
+            name = st.text_input("이름", placeholder="이름", key="login_name")
             st.text_input("아이디", placeholder="아이디", key="login_id")
             st.text_input("비밀번호", type="password",
                           placeholder="비밀번호", key="login_pw")
-            submitted = st.form_submit_button("로그인", type="primary",
-                                              use_container_width=True)
-    if submitted:
-        st.session_state.logged_in = True
-        st.rerun()
+            c1, c2 = st.columns(2)
+            login = c1.form_submit_button("로그인", type="primary",
+                                          use_container_width=True)
+            signup = c2.form_submit_button("회원가입", use_container_width=True)
+        guest = st.button("비회원으로 시작하기", key="guest_btn",
+                          use_container_width=True)
+
+        if st.session_state.get("consent") is False:
+            st.warning("개인정보 활용에 동의해야 서비스를 이용할 수 있어요.")
+
+    if login or signup or guest:
+        st.session_state.user_name = (name or "").strip() or "게스트"
+        st.session_state.pending_login = True
+        st.session_state.pop("consent", None)
+
+    # 로그인/회원가입/비회원 선택 시 개인정보 동의 팝업 표시
+    if st.session_state.get("pending_login"):
+        consent_dialog()
 
 
 def section_title(title: str, tag: str) -> None:
@@ -795,8 +868,18 @@ def render_age_diagnosis() -> None:
         if shot is not None:
             with st.spinner("AI가 피부를 분석하는 중이에요..."):
                 time.sleep(3)
-            st.session_state.last_diagnosis = random_diagnose(
-                int(age), moisture, tone, flush, extra)
+            result = random_diagnose(int(age), moisture, tone, flush, extra)
+            st.session_state.last_diagnosis = result
+            # 진단 기록을 사이트 전체에 누적 저장 (랭킹에 반영)
+            rec_id = time.time_ns()
+            save_record({
+                "id": rec_id,
+                "name": mask_name(st.session_state.get("user_name", "")),
+                "score": result["score"],
+                "gain": result["gain"],
+                "product": (result.get("recommended_ingredients") or ["-"])[0],
+            })
+            st.session_state.my_record_id = rec_id
             st.session_state.show_camera = False
             st.rerun()
 
@@ -817,6 +900,18 @@ def render_age_diagnosis() -> None:
             f'</div>',
             unsafe_allow_html=True,
         )
+
+        # 내 피부에 맞는 추천 제품 + 구매 링크
+        st.markdown('<div class="cl-sec">RECOMMENDED</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cl-h">내 피부 맞춤 추천 제품</div>', unsafe_allow_html=True)
+        for p in recommend_products(result):
+            st.markdown(
+                f'<div class="cl-rec"><div class="cl-rec__body">'
+                f'<div class="cl-rec__name">{p.get("name", "")}</div>'
+                f'<div class="cl-rec__reason">{p.get("reason", "")}</div></div>'
+                f'{buy_buttons(p.get("name", ""))}</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def render_nearby_map() -> None:
@@ -862,22 +957,26 @@ def render_ranking() -> None:
     section_title("우리 동네 피부 랭킹", "RANKING")
     render_nearby_map()
 
-    diagnosis = st.session_state.get("last_diagnosis")
+    # 목업 + 누적된 실제 진단 기록을 합쳐 랭킹 구성
+    records = load_records()
+    my_id = st.session_state.get("my_record_id")
     board = [dict(x) for x in MOCK_RANKING]
-    if diagnosis and isinstance(diagnosis.get("score"), (int, float)):
+    for r in records:
         board.append({
-            "name": "나 (진단 결과)",
-            "score": diagnosis["score"],
-            "gain": int(diagnosis.get("gain", 0)),
-            "product": (diagnosis.get("recommended_ingredients") or ["-"])[0],
-            "is_me": True,
+            "name": r.get("name", "익명"),
+            "score": int(r.get("score", 0)),
+            "gain": int(r.get("gain", 0)),
+            "product": r.get("product", "-"),
+            "is_me": r.get("id") == my_id,
         })
+
+    st.caption(f"지금까지 {len(MOCK_RANKING) + len(records):,}명이 진단에 참여했어요. "
+               "(진단할수록 기록이 쌓여요)")
 
     tab_score, tab_gain = st.tabs(["🏆 피부 점수 순위", "📈 28일 상승 순위"])
 
     with tab_score:
-        st.caption("현재 피부 점수가 높은 순이에요." if diagnosis
-                   else "피부 진단을 하면 내 순위도 함께 볼 수 있어요.")
+        st.caption("현재 피부 점수가 높은 순이에요.")
         for rank, entry in enumerate(
                 sorted(board, key=lambda x: x["score"], reverse=True), start=1):
             _person_row(rank, entry,
