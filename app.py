@@ -27,8 +27,14 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import anthropic
-import tensorflow as tf
 from PIL import Image
+
+try:  # 배포 환경에 tensorflow 휠이 없을 수도 있으므로 미설치 시에도 앱이 동작하도록 가드
+    import tensorflow as tf
+    _HAS_TF = True
+except Exception:  # noqa: BLE001
+    tf = None
+    _HAS_TF = False
 
 try:  # 위치(GPS) 컴포넌트 - 미설치 시에도 앱이 동작하도록 가드
     from streamlit_geolocation import streamlit_geolocation
@@ -224,16 +230,35 @@ def get_client(api_key: str) -> anthropic.Anthropic:
 
 @st.cache_resource(show_spinner=False)
 def load_skin_model():
-    return tf.keras.models.load_model(MODEL_PATH)
+    """CNN 모델을 로드. tensorflow가 없거나 로드에 실패하면 None을 반환해
+    diagnose_skin()이 앱 전체를 죽이지 않고 기본 결과로 대체할 수 있게 한다."""
+    if not _HAS_TF:
+        return None
+    try:
+        return tf.keras.models.load_model(MODEL_PATH)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+_MODEL_UNAVAILABLE_RESULT = {
+    "score": 70,
+    "skin_type": "중성",
+    "concerns": [],
+    "summary": "지금은 AI 분석 서버 연결이 원활하지 않아 기본 결과를 보여드려요. 잠시 후 다시 시도해주세요.",
+    "recommended_ingredients": ["히알루론산", "세라마이드"],
+}
 
 
 def diagnose_skin(image_bytes: bytes) -> dict:
     """업로드된 이미지 바이트를 로컬 CNN 모델로 분석해 진단 결과를 반환한다."""
+    model = load_skin_model()
+    if model is None:
+        return dict(_MODEL_UNAVAILABLE_RESULT)
+
     image = Image.open(BytesIO(image_bytes)).convert("RGB").resize((224, 224))
     image_array = np.array(image, dtype=np.float32)
     image_array = np.expand_dims(image_array, axis=0)
 
-    model = load_skin_model()
     probs = np.asarray(model.predict(image_array, verbose=0)[0], dtype=np.float32)
 
     skin_probs = {
