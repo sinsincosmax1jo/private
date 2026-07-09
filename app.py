@@ -52,6 +52,64 @@ MOCK_RANKING = [
     {"name": "잠실 트러블졸업", "age_group": "20대", "skin_type": "복합성", "score": 63, "gain": 3, "product": "라로슈포제 시카플라스트 밤 B5"},
 ]
 
+# ---------------------------------------------------------------------------
+# 리워드 포인트 / 티어 - 목업 데이터 (실제 서비스에서는 DB에서 적립 내역을 조회)
+#
+# 포인트/티어는 현재 DB 없이 st.session_state["reward_points"]에만 보관된다
+# (진단을 완료할 때마다 points_for_diagnosis()만큼 적립). 나중에 실제 계정
+# 시스템을 붙일 때는 이 값을 유저 레코드의 필드 하나로 옮기기만 하면 된다.
+# 티어 기준(min_points)만 바꾸면 전체 로직이 그대로 따라가도록 상수로 분리했다.
+# ---------------------------------------------------------------------------
+REWARD_TIERS = [
+    {"key": "bronze", "name": "브론즈", "icon": "🥉", "min_points": 0},
+    {"key": "silver", "name": "실버", "icon": "🥈", "min_points": 300},
+    {"key": "gold", "name": "골드", "icon": "🥇", "min_points": 700},
+    {"key": "diamond", "name": "다이아몬드", "icon": "💎", "min_points": 1500},
+    {"key": "master", "name": "마스터", "icon": "👑", "min_points": 3000},
+]
+
+# 명예의 전당(마스터 티어) 목업 유저 - 랭킹 목업과 같은 동네 캐릭터를 재사용해
+# 점수/개선폭이 높은 사람일수록 리워드 포인트도 그럴듯하게 높게 잡았다.
+MOCK_REWARD_USERS = [
+    {"name": "서초동 피부왕자", "points": 4820},
+    {"name": "상도동 도자기피부", "points": 3960},
+    {"name": "판교 물광남", "points": 3120},
+    {"name": "해운대 꿀피부", "points": 2380},
+    {"name": "연남동 무결점", "points": 1050},
+    {"name": "성수동 광채남", "points": 520},
+    {"name": "잠실 트러블졸업", "points": 150},
+]
+
+
+def points_for_diagnosis(result: dict) -> int:
+    """진단 1회 완료 시 적립할 리워드 포인트. 참여 기본점수 + 피부점수 + 개선폭 보너스."""
+    base = 80
+    score_bonus = int(result.get("score", 0))
+    gain_bonus = int(result.get("gain", 0)) * 4
+    return base + score_bonus + gain_bonus
+
+
+def tier_for_points(points: int) -> dict:
+    """현재 포인트가 속한 티어 (REWARD_TIERS는 오름차순 정렬돼 있다고 가정)."""
+    current = REWARD_TIERS[0]
+    for t in REWARD_TIERS:
+        if points >= t["min_points"]:
+            current = t
+        else:
+            break
+    return current
+
+
+def tier_progress_pct(points: int, tier: dict, next_tier: dict | None) -> int:
+    """티어 한 칸의 진행률(0~100). 아직 도달 못했으면 0, 이미 넘었으면 100."""
+    lo = tier["min_points"]
+    if points < lo:
+        return 0
+    if next_tier is None:
+        return 100
+    hi = next_tier["min_points"]
+    return 100 if points >= hi else round((points - lo) / (hi - lo) * 100)
+
 # 많이 쓰는 화장품 랭킹 - 목업 데이터 (users = 동네 사용자 수)
 MOCK_PRODUCT_RANKING = [
     {"name": "라운드랩 자작나무 수분 크림", "category": "수분크림", "users": 1284},
@@ -949,8 +1007,12 @@ CUSTOM_CSS = """
 
 /* ---- 하단 탭 내비게이션 ---- */
 .st-key-bottomnav {
-  /* 폰 프레임(430px, 가운데) 폭에 맞추고, 버튼 묶음을 가운데로 정렬 */
+  /* 폰 프레임(430px, 가운데) 폭에 맞추고, 버튼 묶음을 가운데로 정렬.
+     width는 반드시 auto!important로 둬야 한다 - streamlit이 자체적으로
+     width:100%(= 뷰포트 전체 폭)를 강제해서 left/right로 계산되는 430px
+     폭을 무시해버리는 문제가 있었다 (탭 6개부터 화면 밖으로 넘쳐 보였음). */
   position: fixed; left: max(0px, calc(50% - 215px)); right: max(0px, calc(50% - 215px));
+  width: auto !important;
   bottom: 0; z-index: 9998;
   background: rgba(10, 14, 19, 0.96); backdrop-filter: blur(16px);
   border-top: 1px solid var(--glass-brd);
@@ -1076,6 +1138,38 @@ CUSTOM_CSS = """
 .cl-prank__bar span { display: block; height: 100%; border-radius: 999px;
   background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
 .cl-prank__meta { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+
+/* ---- 리워드: 티어 시스템 ---- */
+.cl-tier-row { background: var(--glass); border: 1px solid var(--glass-brd); border-radius: 16px;
+  padding: 14px 16px; margin-bottom: 10px; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+.cl-tier-row.is-current { background: var(--accent-dim); border-color: rgba(67,211,176,0.6);
+  box-shadow: 0 0 0 1px rgba(67,211,176,0.25), 0 0 24px rgba(67,211,176,0.25); }
+.cl-tier-row__top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.cl-tier-row__name { font-size: 14.5px; font-weight: 800; }
+.cl-tier-row__range { font-family: 'Space Grotesk', monospace; font-size: 11.5px; color: var(--muted); }
+.cl-tier-row.is-current .cl-tier-row__range { color: var(--accent); }
+.cl-tier-row__track { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.cl-tier-row__fill { display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width 0.6s ease; }
+
+/* ---- 리워드: 명예의 전당 ---- */
+.cl-hof-lock { background: var(--glass); border: 1px dashed var(--glass-brd); border-radius: 16px;
+  padding: 22px 18px; text-align: center; font-size: 13.5px; line-height: 1.65; color: var(--muted); }
+.cl-hof-lock b { color: var(--accent); }
+.cl-hof-row { display: flex; align-items: center; gap: 12px; background: var(--glass);
+  border: 1px solid var(--glass-brd); border-radius: 14px; padding: 12px 16px; margin-bottom: 8px; }
+.cl-hof-row.is-me { background: var(--accent-dim); border-color: rgba(67,211,176,0.5); }
+.cl-hof-row__rank { width: 30px; flex-shrink: 0; text-align: center; font-size: 17px; font-weight: 800;
+  font-family: 'Space Grotesk', monospace; color: var(--muted); }
+.cl-hof-row__name { flex: 1; min-width: 0; font-size: 14px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-hof-row__points { font-family: 'Space Grotesk', monospace; font-weight: 700; color: var(--accent);
+  flex-shrink: 0; }
+.cl-hof-row--top1 { border-color: rgba(244,193,94,0.55); box-shadow: 0 0 22px rgba(244,193,94,0.18); }
+.cl-hof-row--top1 .cl-hof-row__rank { font-size: 23px; }
+.cl-hof-row--top2 .cl-hof-row__rank, .cl-hof-row--top3 .cl-hof-row__rank { font-size: 20px; }
+.cl-hof-row--top2 { border-color: rgba(94,234,212,0.4); }
+.cl-hof-row--top3 { border-color: rgba(94,234,212,0.25); }
 
 /* ---- 구매 아이콘 버튼 (올리브영 / 최저가) ---- */
 .cl-shop-group { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -1371,8 +1465,13 @@ L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
 # 화면 렌더링
 # ---------------------------------------------------------------------------
 def _logout() -> None:
-    for k in ("logged_in", "consent", "pending_login", "my_record_id"):
+    # 로그인/로그아웃은 페이지 새로고침 없이 처리되므로(세션 유지 목적),
+    # 진단 관련 상태도 여기서 같이 지워야 다음 로그인 사용자에게 남지 않는다.
+    for k in ("logged_in", "consent", "pending_login", "my_record_id",
+              "diag_stage", "diag_answers", "last_diagnosis",
+              "reward_points", "last_reward_earned"):
         st.session_state.pop(k, None)
+    _reset_survey_answers()
 
 
 @st.dialog("개인정보 활용 동의")
@@ -1546,6 +1645,14 @@ def render_category_bars(categories: dict) -> None:
         )
 
 
+def _reset_survey_answers() -> None:
+    """설문 라디오 위젯의 session_state를 지운다 - 그러지 않으면 새 진단을 시작해도
+    이전 회차에 고른 보기가 그대로 선택된 채로 남아있는다."""
+    for q in SURVEY_QUESTIONS:
+        st.session_state.pop(f"survey_{q['key']}", None)
+    st.session_state.pop("diag_answers", None)
+
+
 def render_photo_stage() -> None:
     """진단 1단계 - 얼굴 사진을 촬영하거나 업로드한다 (실제 이미지 분석은 하지 않음)."""
     st.markdown('<div class="cl-sec">STEP 1 · PHOTO</div>', unsafe_allow_html=True)
@@ -1576,10 +1683,11 @@ def render_photo_stage() -> None:
 
 
 def render_survey_stage() -> None:
-    """진단 2단계 - 피부 설문 7문항."""
+    """진단 2단계 - 피부 설문 7문항. 각 문항은 시작 시 아무 것도 선택돼 있지 않다
+    (index=None) - 사용자가 직접 고르기 전까지는 체크된 보기가 없어야 하기 때문."""
     st.markdown('<div class="cl-sec">STEP 2 · SURVEY</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">피부 설문 7문항</div>', unsafe_allow_html=True)
-    st.caption("솔직하게 답할수록 더 정확한 맞춤 결과가 나와요.")
+    st.caption("모든 문항에 답해주세요. 솔직하게 답할수록 더 정확한 맞춤 결과가 나와요.")
 
     with st.form(key="survey_form"):
         answers = {}
@@ -1587,15 +1695,19 @@ def render_survey_stage() -> None:
             st.markdown(f"**Q{i}. {q['text']}**")
             answers[q["key"]] = st.radio(
                 q["text"], [o["label"] for o in q["options"]],
-                label_visibility="collapsed", key=f"survey_{q['key']}",
+                index=None, label_visibility="collapsed", key=f"survey_{q['key']}",
             )
         submitted = st.form_submit_button(
             "AI 분석 시작하기", type="primary", use_container_width=True)
 
     if submitted:
-        st.session_state.diag_answers = answers
-        st.session_state.diag_stage = "loading"
-        st.rerun()
+        unanswered = sum(1 for v in answers.values() if v is None)
+        if unanswered:
+            st.error(f"아직 답하지 않은 문항이 {unanswered}개 있어요. 모든 문항에 답해주세요.")
+        else:
+            st.session_state.diag_answers = answers
+            st.session_state.diag_stage = "loading"
+            st.rerun()
 
     if st.button("← 사진 다시 선택하기", key="diag_back_photo"):
         st.session_state.diag_stage = "photo"
@@ -1629,6 +1741,12 @@ def render_loading_stage() -> None:
         "product": recs[0]["name"] if recs else "-",
     })
     st.session_state.my_record_id = rec_id
+
+    # 리워드 포인트 적립 (진단 완료 1회당 참여점수 + 피부점수 + 개선폭 보너스)
+    earned = points_for_diagnosis(result)
+    st.session_state.reward_points = st.session_state.get("reward_points", 0) + earned
+    st.session_state.last_reward_earned = earned
+
     st.session_state.diag_stage = "result"
     st.rerun()
 
@@ -1653,6 +1771,15 @@ def render_result_stage() -> None:
         f'</div>',
         unsafe_allow_html=True,
     )
+
+    earned = st.session_state.get("last_reward_earned")
+    if earned:
+        st.markdown(
+            f'<div class="cl-note">🎁 진단 완료로 <b>+{earned}P</b> 적립됐어요! '
+            f'현재 <b>{st.session_state.get("reward_points", 0):,}P</b> · '
+            f'하단 <b>리워드</b> 탭에서 내 티어를 확인해보세요.</div>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown('<div class="cl-sec">ANALYSIS</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">카테고리별 분석</div>', unsafe_allow_html=True)
@@ -1682,6 +1809,7 @@ def render_result_stage() -> None:
     if st.button("🔁 새로운 진단 시작하기", use_container_width=True, key="result_restart"):
         st.session_state.diag_stage = "photo"
         st.session_state.pop("last_diagnosis", None)
+        _reset_survey_answers()
         st.rerun()
 
 
@@ -1749,12 +1877,8 @@ def _person_row(rank: int, entry: dict, value_html: str, key_prefix: str = "") -
                 )
 
 
-def render_ranking() -> None:
-    render_header()
-    section_title("우리 동네 피부 랭킹", "RANKING")
-    render_skin_map()
-
-    # 목업 + 누적된 실제 진단 기록을 합쳐 랭킹 구성
+def build_ranking_board() -> list[dict]:
+    """목업 + 누적된 실제 진단 기록을 합쳐 랭킹 보드를 만든다 (랭킹/리워드 화면 공용)."""
     records = load_records()
     my_id = st.session_state.get("my_record_id")
     board = [dict(x) for x in MOCK_RANKING]
@@ -1768,19 +1892,34 @@ def render_ranking() -> None:
             "product": r.get("product", "-"),
             "is_me": r.get("id") == my_id,
         })
+    return board
+
+
+def my_score_rank(board: list[dict]) -> tuple[int | None, int]:
+    """전체 피부 점수 순위 기준 내 순위(1부터)와 전체 인원수. 내 기록이 없으면 (None, 총원)."""
+    ranked = sorted(board, key=lambda x: x["score"], reverse=True)
+    rank = next((i for i, e in enumerate(ranked, start=1) if e.get("is_me")), None)
+    return rank, len(ranked)
+
+
+def render_ranking() -> None:
+    render_header()
+    section_title("우리 동네 피부 랭킹", "RANKING")
+    render_skin_map()
+
+    board = build_ranking_board()
 
     st.markdown('<div class="cl-sec">RANKING</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">피부 점수 랭킹</div>', unsafe_allow_html=True)
-    st.caption(f"지금까지 {len(MOCK_RANKING) + len(records):,}명이 진단에 참여했어요. "
+    st.caption(f"지금까지 {len(board):,}명이 진단에 참여했어요. "
                "(진단할수록 기록이 쌓여요)")
 
     # 내 현재 순위 (전체 기준, 나이대 필터와 무관하게 항상 보여준다)
-    all_score_sorted = sorted(board, key=lambda x: x["score"], reverse=True)
-    my_rank = next((i for i, e in enumerate(all_score_sorted, start=1) if e.get("is_me")), None)
+    my_rank, total = my_score_rank(board)
     if my_rank:
         st.markdown(
             f'<div class="cl-status-wrap"><div class="cl-status">'
-            f'<b>내 순위 {my_rank}위</b> / 전체 {len(all_score_sorted)}명 중</div></div>',
+            f'<b>내 순위 {my_rank}위</b> / 전체 {total}명 중</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -2066,6 +2205,91 @@ def render_purchases_screen() -> None:
         purchases_synced=False), use_container_width=True)
 
 
+def render_rewards_screen() -> None:
+    """리워드 탭 - 내 포인트/티어, 티어 시스템, 명예의 전당(마스터 전용).
+    포인트는 실제 DB 없이 st.session_state["reward_points"]에만 보관되고
+    (진단 완료 시 points_for_diagnosis()로 적립), 랭킹은 build_ranking_board()를
+    그대로 재사용한다 - 나중에 실제 계정 시스템을 붙일 때 이 두 지점만 바꾸면 된다."""
+    render_header()
+    section_title("리워드", "REWARDS")
+
+    points = st.session_state.get("reward_points", 0)
+    my_tier = tier_for_points(points)
+    tier_idx = REWARD_TIERS.index(my_tier)
+    next_tier = REWARD_TIERS[tier_idx + 1] if tier_idx + 1 < len(REWARD_TIERS) else None
+
+    board = build_ranking_board()
+    my_rank, total = my_score_rank(board)
+    rank_text = f"우리 동네 랭킹 {my_rank}위 / 전체 {total}명 중" if my_rank else "아직 피부 진단 기록이 없어요"
+
+    st.markdown(
+        f'<div class="cl-result">'
+        f'<p class="cl-result__label">MY REWARD POINTS</p>'
+        f'<p class="cl-result__score">{points:,}P</p>'
+        f'<p class="cl-result__type">{my_tier["icon"]} {my_tier["name"]} 티어</p>'
+        f'<p class="cl-result__summary">{rank_text}</p>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+    if next_tier:
+        remain = max(0, next_tier["min_points"] - points)
+        st.caption(f"다음 티어 {next_tier['icon']} {next_tier['name']}까지 {remain:,}P 남았어요. "
+                   "(피부 진단을 완료할 때마다 포인트가 쌓여요)")
+    else:
+        st.caption("최고 티어 마스터에 도달했어요! 아래 명예의 전당에서 확인해보세요 👑")
+
+    # --- 티어 시스템 5단계 ---
+    st.markdown('<div class="cl-sec">TIER</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">티어 시스템</div>', unsafe_allow_html=True)
+    for i, tier in enumerate(REWARD_TIERS):
+        nxt = REWARD_TIERS[i + 1] if i + 1 < len(REWARD_TIERS) else None
+        pct = tier_progress_pct(points, tier, nxt)
+        is_current = tier["key"] == my_tier["key"]
+        range_text = (f"{tier['min_points']:,}~{nxt['min_points'] - 1:,}P" if nxt
+                      else f"{tier['min_points']:,}P~")
+        st.markdown(
+            f'<div class="cl-tier-row{" is-current" if is_current else ""}">'
+            f'<div class="cl-tier-row__top">'
+            f'<span class="cl-tier-row__name">{tier["icon"]} {tier["name"]}</span>'
+            f'<span class="cl-tier-row__range">{range_text}</span></div>'
+            f'<div class="cl-tier-row__track"><span class="cl-tier-row__fill" '
+            f'style="width:{pct}%"></span></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # --- 명예의 전당 (마스터 티어 전용) ---
+    st.markdown('<div class="cl-sec">HALL OF FAME</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">명예의 전당</div>', unsafe_allow_html=True)
+
+    master_min = REWARD_TIERS[-1]["min_points"]
+    if points < master_min:
+        remain = master_min - points
+        st.markdown(
+            f'<div class="cl-hof-lock">🔒 마스터 티어({master_min:,}P) 달성 시 '
+            f'명예의 전당이 열려요.<br>앞으로 <b>{remain:,}P</b> 더 모으면 도전할 수 있어요!</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        my_name = (st.session_state.get("user_name") or "").strip() or "게스트"
+        hof = [dict(u) for u in MOCK_REWARD_USERS if u["points"] >= master_min]
+        hof.append({"name": my_name, "points": points, "is_me": True})
+        hof.sort(key=lambda x: x["points"], reverse=True)
+        trophies = {1: "🥇", 2: "🥈", 3: "🥉"}
+        for rank, u in enumerate(hof, start=1):
+            trophy = trophies.get(rank, str(rank))
+            top_cls = f" cl-hof-row--top{rank}" if rank <= 3 else ""
+            me_cls = " is-me" if u.get("is_me") else ""
+            st.markdown(
+                f'<div class="cl-hof-row{top_cls}{me_cls}">'
+                f'<div class="cl-hof-row__rank">{trophy}</div>'
+                f'<div class="cl-hof-row__name">{u["name"]}</div>'
+                f'<div class="cl-hof-row__points">{u["points"]:,}P</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+
 def render_home_screen() -> None:
     render_header()
     uri = logo_data_uri()
@@ -2137,11 +2361,11 @@ def set_nav(screen: str) -> None:
 
 
 def render_bottom_nav(active: str) -> None:
-    """하단 고정 탭 내비게이션 (홈 / 랭킹 / 진단 / 매치 / 구매).
-    아이콘 위 + 작은 글자 아래로 쌓아, 웹·모바일 모두 화면 폭 안에 5칸이 들어가게 한다."""
+    """하단 고정 탭 내비게이션 (홈 / 랭킹 / 진단 / 매치 / 구매 / 리워드).
+    아이콘 위 + 작은 글자 아래로 쌓아, 웹·모바일 모두 화면 폭 안에 6칸이 들어가게 한다."""
     items = [("home", "🏠", "홈"), ("ranking", "🏆", "랭킹"),
              ("diagnose", "📷", "진단"), ("match", "⚔️", "매치"),
-             ("purchases", "🛍️", "구매")]
+             ("purchases", "🛍️", "구매"), ("rewards", "🎁", "리워드")]
     with st.container(key="bottomnav"):
         cols = st.columns(len(items))
         for col, (key, icon, label) in zip(cols, items):
@@ -2396,7 +2620,7 @@ def main() -> None:
         st.session_state.nav = st.query_params["nav"]
         del st.query_params["nav"]
 
-    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단 / 매치 / 구매)
+    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단 / 매치 / 구매 / 리워드)
     nav = st.session_state.get("nav", "home")
     if nav == "ranking":
         render_ranking()
@@ -2406,6 +2630,8 @@ def main() -> None:
         render_match_screen()
     elif nav == "purchases":
         render_purchases_screen()
+    elif nav == "rewards":
+        render_rewards_screen()
     else:
         render_home_screen()
 
