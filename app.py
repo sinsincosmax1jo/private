@@ -64,6 +64,16 @@ MOCK_PRODUCT_RANKING = [
     {"name": "이니스프리 노세범 미네랄 파우더", "category": "피지관리", "users": 689},
 ]
 
+# 피부 우수자(고점수) 지역 분포 - 목업 데이터
+MOCK_DISTRICTS = [
+    {"area": "강남구", "count": 128},
+    {"area": "서초구", "count": 112},
+    {"area": "송파구", "count": 97},
+    {"area": "마포구", "count": 84},
+    {"area": "성동구", "count": 71},
+    {"area": "용산구", "count": 63},
+]
+
 EVENT_LABELS = {
     "date": "소개팅",
     "interview": "면접",
@@ -128,8 +138,8 @@ def buy_buttons(product_name: str) -> str:
 
 
 def nearby_points(lat: float, lon: float) -> "pd.DataFrame":
-    """내 위치(첫 점) + 주변 사용자 목업 좌표를 지도용 DataFrame으로 생성."""
-    offsets = [
+    """내 위치(민트) + 주변 사용자(회색) + 주변 피부과(빨강) 좌표 DataFrame."""
+    users = [
         (0.0, 0.0), (0.0042, 0.0031), (-0.0035, 0.0044), (0.0051, -0.0039),
         (-0.0048, -0.0028), (0.0022, 0.0059), (-0.0061, 0.0018),
     ]
@@ -137,7 +147,13 @@ def nearby_points(lat: float, lon: float) -> "pd.DataFrame":
         {"lat": lat + dy, "lon": lon + dx,
          "color": "#43d3b0" if i == 0 else "#9aa4ad",
          "size": 130 if i == 0 else 70}
-        for i, (dy, dx) in enumerate(offsets)
+        for i, (dy, dx) in enumerate(users)
+    ]
+    # 주변 피부과 (빨강)
+    clinics = [(0.0028, -0.0018), (-0.0026, 0.0022), (0.0016, 0.0041), (-0.0044, -0.0006)]
+    rows += [
+        {"lat": lat + dy, "lon": lon + dx, "color": "#ff5a6a", "size": 95}
+        for dy, dx in clinics
     ]
     return pd.DataFrame(rows)
 
@@ -692,6 +708,19 @@ CUSTOM_CSS = """
 .cl-topbrand { font-size: 18px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.1; }
 .cl-topbrand span { display: block; font-family: 'Space Grotesk', monospace; font-size: 8.5px;
   letter-spacing: 1.5px; color: var(--muted); font-weight: 600; margin-top: 3px; }
+/* 로고(브랜드) 버튼 = 홈 이동 */
+.st-key-brandbtn .stButton > button {
+  border: 0; background: transparent; padding: 0; box-shadow: none;
+  font-size: 18px; font-weight: 800; letter-spacing: -0.4px; color: var(--text);
+  text-align: left; line-height: 1.1; min-height: 0;
+}
+.st-key-brandbtn .stButton > button:hover { color: var(--accent); border: 0; }
+.st-key-brandbtn .stButton > button p { margin: 0; }
+.st-key-brandbtn .stButton > button p::after {
+  content: "SKINCARE, MANDATORY FOR MEN"; display: block;
+  font-family: 'Space Grotesk', monospace; font-size: 8.5px; letter-spacing: 1.5px;
+  color: var(--muted); font-weight: 600; margin-top: 3px;
+}
 .st-key-logout .stButton > button { font-size: 12px; font-weight: 600; padding: 8px 6px;
   color: var(--muted); }
 .st-key-logout .stButton > button:hover { color: var(--accent); border-color: var(--accent); }
@@ -828,14 +857,12 @@ def section_title(title: str, tag: str) -> None:
 
 
 def render_header() -> None:
-    """상단 브랜드 바 + 로그아웃 (모든 화면 공통)."""
+    """상단 브랜드 바(로고=홈 이동) + 로그아웃 (모든 화면 공통)."""
     top_l, top_r = st.columns([3, 1])
     with top_l:
-        st.markdown(
-            '<div class="cl-topbrand">clozkin'
-            '<span>SKINCARE, MANDATORY FOR MEN</span></div>',
-            unsafe_allow_html=True,
-        )
+        with st.container(key="brandbtn"):
+            st.button("clozkin", key="btn_brand", on_click=set_nav, args=("home",),
+                      help="홈으로")
     with top_r:
         with st.container(key="logout"):
             st.button("로그아웃", key="btn_logout", on_click=_logout,
@@ -928,13 +955,14 @@ def render_nearby_map() -> None:
     else:
         st.caption("위치 컴포넌트를 불러오지 못해 기본 위치(서울 강남)로 표시해요.")
 
+    legend = "🟢 나 · ⚪ 주변 사용자 · 🔴 주변 피부과"
     if lat and lon:
         st.map(nearby_points(lat, lon), color="color", size="size", zoom=13)
-        st.caption(f"📍 현재 위치 기준 · 민트 점이 나예요 (위도 {lat:.4f}, 경도 {lon:.4f})")
+        st.caption(f"📍 현재 위치 기준 · {legend} (위도 {lat:.4f}, 경도 {lon:.4f})")
     else:
         # 위치 미허용 시 기본 위치(서울 강남역)로 예시 지도
         st.map(nearby_points(37.4979, 127.0276), color="color", size="size", zoom=13)
-        st.caption("위치 권한을 허용하면 실제 내 주변으로 지도가 바뀌어요. (지금은 예시 위치)")
+        st.caption(f"{legend} · 위치 권한을 허용하면 실제 내 주변으로 바뀌어요. (지금은 예시 위치)")
 
 
 def _person_row(rank: int, entry: dict, value_html: str) -> None:
@@ -989,6 +1017,26 @@ def render_ranking() -> None:
             _person_row(rank, entry,
                         f'<div class="cl-rank__score cl-rank__gain">▲{entry.get("gain", 0)}</div>')
 
+    # --- 피부 우수자 지역 분포 ---
+    st.markdown('<div class="cl-sec">DISTRIBUTION</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">피부 좋은 남자들, 어디 많을까?</div>', unsafe_allow_html=True)
+    st.caption("피부 점수 상위 사용자들의 지역 분포예요.")
+
+    districts = sorted(MOCK_DISTRICTS, key=lambda x: x["count"], reverse=True)
+    top_count = districts[0]["count"]
+    for rank, d in enumerate(districts, start=1):
+        pct = round(d["count"] / top_count * 100)
+        st.markdown(
+            f'<div class="cl-prank">'
+            f'<div class="cl-rank__num">{rank}</div>'
+            f'<div class="cl-prank__body">'
+            f'<div class="cl-prank__top"><span class="cl-prank__name">{d["area"]}</span></div>'
+            f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
+            f'<div class="cl-prank__meta">{d["count"]:,}명</div></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
     # --- 많이 쓰는 화장품 랭킹 ---
     st.markdown('<div class="cl-sec">MOST USED</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">많이 쓰는 화장품 랭킹</div>', unsafe_allow_html=True)
@@ -1015,6 +1063,13 @@ def render_ranking() -> None:
 def render_diagnosis_screen() -> None:
     render_header()
     render_age_diagnosis()
+
+    st.markdown('<div class="cl-sec">MOVE</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    c1.button("🏠 메인 화면으로", key="diag_home", on_click=set_nav, args=("home",),
+              use_container_width=True)
+    c2.button("🏆 랭킹 보러가기", key="diag_rank", on_click=set_nav, args=("ranking",),
+              use_container_width=True)
 
 
 def render_home_screen() -> None:
