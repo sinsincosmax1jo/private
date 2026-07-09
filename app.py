@@ -260,15 +260,17 @@ def diagnose_skin(image_bytes: bytes) -> dict:
         None,
     )
 
-    # 6개 클래스 확률을 기반으로 점수를 계산한다.
-    # 트러블·홍조·다크서클은 낮게, 정상 상태는 높게 반영한다.
+    # 6개 클래스 확률을 기반으로 점수를 계산한다. 클래스별로 심각도에 따라
+    # 차등 가중치를 둔다: 여드름(acne)이 가장 크게 감점되고, 다크서클/눈밑처짐
+    # (bags)·홍조(redness)는 중간 수준으로 감점된다. 건성/지성(dry/oily)은
+    # "문제"가 아닌 피부 타입일 뿐이라 감점을 작게 두고, normal은 가점한다.
     class_weights = {
-        "acne": -0.35,
-        "bags": -0.20,
-        "dry": -0.10,
-        "normal": 0.15,
-        "oily": -0.10,
-        "redness": -0.20,
+        "acne": -0.45,
+        "bags": -0.25,
+        "dry": -0.05,
+        "normal": 0.10,
+        "oily": -0.05,
+        "redness": -0.30,
     }
     weighted_score = sum(
         class_weights[name] * float(prob)
