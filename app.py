@@ -2,7 +2,11 @@
 clozkin - 뷰티 입문 남성을 위한 AI 스킨케어 가이드 MVP (Streamlit 버전)
 
 Streamlit Cloud 배포용. 기존 Flask 단일 파일 버전을 Streamlit으로 포팅했다.
-  - 피부 진단: 카메라/사진 업로드 -> 로컬 CNN 모델 분석
+발표용 프로토타입이므로 실제 이미지 분석 모델이나 DB 학습은 쓰지 않고, 설문/사진 제출 후
+"AI가 분석한 것처럼" 보이는 시뮬레이션 흐름으로 결과를 만든다 (자세한 로직은
+simulate_ai_diagnosis 참고).
+  - 피부 진단: 사진 촬영/업로드 + 설문 7문항 -> 로딩 화면 -> 설문 70% + 이미지 30%로
+    합성한 카테고리별/최종 점수 (전부 랜덤이지만 응답에 따라 그럴듯한 범위 안에서 생성됨)
   - 우리 동네 피부랭킹: 진단 점수를 목업 랭킹에 반영
   - D-day 케어 모드: 이벤트 + 목표일 -> Claude가 카운트다운 루틴 생성
 
@@ -21,7 +25,9 @@ import json
 import time
 import base64
 import random
+import datetime
 from io import BytesIO
+from collections import Counter
 
 import numpy as np
 import streamlit as st
@@ -171,8 +177,13 @@ def buy_buttons(product_name: str) -> str:
 
 
 def recommend_products(diagnosis: dict) -> list[dict]:
-    """진단 결과(피부 타입)에 맞춘 추천 제품 목록. 이벤트 대비 선크림 포함."""
-    skin_type = diagnosis.get("skin_type", "")
+    """진단 결과(피부 타입)에 맞춘 추천 제품 목록. 민감도 카테고리가 낮으면 진정 제품을 우선하고,
+    이벤트 대비 선크림도 포함한다."""
+    categories = diagnosis.get("categories") or {}
+    if categories.get("sensitivity", 100) < 55:
+        skin_type = "민감성"
+    else:
+        skin_type = diagnosis.get("skin_type", "")
     items = LOCAL_PRODUCTS.get(skin_type, LOCAL_PRODUCTS.get("중성", LOCAL_PRODUCTS["복합성"]))
     picks = [{"name": n, "reason": why} for n, why in items]
     picks.append({"name": "라로슈포제 안뗄리오스 선크림",
@@ -380,6 +391,27 @@ def render_max_loading(message: str) -> None:
     )
 
 
+# 사진+설문 제출 후 보여주는 "AI 분석 중" 문구 (실제 분석은 없고, 문구만 순환한다)
+_ANALYSIS_MESSAGES = [
+    "피부 데이터를 분석하고 있습니다",
+    "유수분 밸런스를 계산하는 중입니다",
+    "트러블 및 민감도 지표를 정리하고 있습니다",
+    "맞춤 결과를 생성하고 있습니다",
+]
+
+
+def render_analysis_loading() -> None:
+    """설문/사진 제출 후 2~4초간 문구가 바뀌는 'AI 분석 중' 스플래시.
+    실제 분석은 하지 않고, max 스플래시 위에 문구만 순환시킨다."""
+    placeholder = st.empty()
+    per_message = random.uniform(0.6, 1.0)
+    for msg in _ANALYSIS_MESSAGES:
+        with placeholder.container():
+            render_max_loading(msg)
+        time.sleep(per_message)
+    placeholder.empty()
+
+
 def _extract_json(text: str) -> dict:
     """모델 응답에서 JSON 블록만 안전하게 추출."""
     text = text.strip()
@@ -429,19 +461,20 @@ def save_record(rec: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 피부 진단 (나이 입력 기반, 결과는 랜덤)
+# 피부 진단 시뮬레이션
+#
+# 실제 이미지 분석 모델이나 DB 학습은 전혀 쓰지 않는다. 발표에서 설명할
+# "설문 70% + 이미지 30%" 가중치 구조를 코드로도 그대로 흉내 내기 위해:
+#   1) 설문 응답 -> 카테고리별 "그럴듯한 범위"를 정하고 그 안에서 랜덤 생성 (설문 점수)
+#   2) 카테고리별 랜덤 값을 하나 더 생성 (이미지 점수 - 실제 분석 없이 순수 랜덤)
+#   3) 카테고리 최종 점수 = 설문 점수 x 0.7 + 이미지 점수 x 0.3
+#   4) 최종 피부 점수는 항상 이 카테고리 점수들의 가중합으로 "역산"해서 계산하므로
+#      화면에 보이는 세부 점수와 최종 점수가 항상 정확히 일치한다.
 # ---------------------------------------------------------------------------
-_SKIN_TYPES = ["건성", "지성", "복합성", "민감성"]
 _INGREDIENT_POOL = [
     "히알루론산", "나이아신아마이드", "센텔라", "비타민C",
     "세라마이드", "판테놀", "어성초", "마데카소사이드",
 ]
-
-# 유수분 선택값 -> 피부 타입 매핑
-_MOISTURE_TO_TYPE = {
-    "건성": "건성", "약간 건성": "건성", "보통": "복합성",
-    "약간 지성": "지성", "지성": "지성",
-}
 # 고민 -> 추천 성분 매핑
 _CONCERN_TO_INGREDIENT = {
     "홍조": "센텔라", "속건조": "세라마이드", "번들거림(유분)": "나이아신아마이드",
@@ -449,84 +482,211 @@ _CONCERN_TO_INGREDIENT = {
     "다크서클": "카페인", "각질": "판테놀",
 }
 
+# 결과 화면에 보여줄 5개 세부 카테고리 (0~100점, 가로 바로 표시)
+_CATEGORY_KEYS = ["moisture", "trouble", "sensitivity", "tone", "texture"]
+_CATEGORY_LABELS = {
+    "moisture": "유수분 밸런스", "trouble": "트러블", "sensitivity": "민감도/홍조",
+    "tone": "다크서클/톤 균일도", "texture": "피부결/모공",
+}
+# 최종 피부 점수 = 카테고리별 가중합 (총합 100%)
+_CATEGORY_WEIGHTS = {"moisture": 0.25, "trouble": 0.25, "sensitivity": 0.20,
+                     "tone": 0.15, "texture": 0.15}
+_CATEGORY_CONCERN = {"trouble": "트러블", "sensitivity": "홍조",
+                     "tone": "칙칙함", "texture": "모공"}
 
-# 점수대(밴드)별 설명 문구 풀 - 진단 결과 요약을 점수대에 맞게 랜덤으로 뽑는다.
-_SCORE_SUMMARIES = {
-    "excellent": [  # 90점 이상
-        "와, {age}세 기준 최상위권이에요! max도 감탄하는 완벽한 피부 컨디션이에요 ✨",
-        "지금 이 상태, 거의 도자기예요. 하던 루틴 그대로 쭉 유지해주세요 👑",
-        "관리 고수시네요! {stype} 피부인데도 트러블 없이 아주 안정적이에요.",
-    ],
-    "great": [  # 80~89점
-        "{age}세 평균보다 훨씬 관리가 잘 되고 있어요! 지금 루틴 유지 추천 👍",
-        "상위권 피부예요. 보습만 조금 더 신경 쓰면 최상급도 금방이에요 💧",
-        "{stype} 피부 밸런스가 좋아요. 포인트 케어만 더하면 완벽해요!",
-    ],
-    "good": [  # 70~79점
-        "{age}세 기준 딱 평균 정도예요. 보습만 챙겨도 확 좋아질 거예요.",
-        "기본기는 탄탄해요! {stype} 피부에 맞는 세럼 하나만 더해봐요 😉",
-        "무난하고 안정적인 상태예요. 꾸준함이 더해지면 점수가 쑥 오를 거예요.",
-    ],
-    "care": [  # 60~69점
-        "요즘 컨디션이 살짝 지쳐 보여요. max랑 수분 채우기부터 시작해봐요 💧",
-        "{stype} 피부라 지금은 진정·보습이 가장 중요해요. 천천히 같이 가봐요!",
-        "괜찮아요, 지금부터가 시작이에요. 기본 루틴만 잡아도 확 달라져요 🌱",
-    ],
+# 설문 7문항. 각 옵션의 "effects"는 해당 카테고리가 얼마나 안 좋은 쪽(0=좋음~3=나쁨)인지를
+# 나타내고, "direction"은 유수분 타입(건성/지성/복합성/중성) 판단에 쓰인다.
+SURVEY_QUESTIONS = [
+    {"key": "q1", "text": "세안 후 아무것도 바르지 않았을 때 피부 상태는 어떤가요?",
+     "options": [
+         {"label": "많이 당기고 건조하다", "effects": {"moisture": 3.0}, "direction": "건성"},
+         {"label": "약간 당긴다", "effects": {"moisture": 1.5}, "direction": "건성"},
+         {"label": "별 느낌 없다", "effects": {"moisture": 0.0}, "direction": "중성"},
+         {"label": "금방 번들거린다", "effects": {"moisture": 2.0}, "direction": "지성"},
+     ]},
+    {"key": "q2", "text": "오후가 되면 얼굴 유분은 어느 정도 올라오나요?",
+     "options": [
+         {"label": "거의 없다", "effects": {"moisture": 1.2}, "direction": "건성"},
+         {"label": "T존만 약간 올라온다", "effects": {"moisture": 0.3, "texture": 0.4}, "direction": "복합성"},
+         {"label": "얼굴 전체가 번들거린다", "effects": {"moisture": 2.5, "texture": 1.3}, "direction": "지성"},
+         {"label": "날마다 다르다", "effects": {"moisture": 1.5}, "direction": "복합성"},
+     ]},
+    {"key": "q3", "text": "최근 한 달 동안 트러블은 얼마나 자주 올라왔나요?",
+     "options": [
+         {"label": "거의 없다", "effects": {"trouble": 0.0}},
+         {"label": "가끔 1~2개 올라온다", "effects": {"trouble": 1.0}},
+         {"label": "자주 반복된다", "effects": {"trouble": 2.2}},
+         {"label": "항상 있는 편이다", "effects": {"trouble": 3.0}},
+     ]},
+    {"key": "q4", "text": "가장 신경 쓰이는 피부 고민은 무엇인가요?",
+     "options": [
+         {"label": "트러블/여드름", "effects": {"trouble": 1.6}},
+         {"label": "번들거림/피지", "effects": {"moisture": 1.6}, "direction": "지성"},
+         {"label": "건조함", "effects": {"moisture": 1.6}, "direction": "건성"},
+         {"label": "모공/피부결", "effects": {"texture": 2.0}},
+         {"label": "다크서클/칙칙함", "effects": {"tone": 2.0}},
+         {"label": "홍조/민감함", "effects": {"sensitivity": 1.6}},
+         {"label": "잘 모르겠다", "effects": {}},
+     ]},
+    {"key": "q5", "text": "피부가 붉어지거나 예민해지는 편인가요?",
+     "options": [
+         {"label": "거의 없다", "effects": {"sensitivity": 0.0}},
+         {"label": "가끔 있다", "effects": {"sensitivity": 1.0}},
+         {"label": "자주 있다", "effects": {"sensitivity": 2.2}},
+         {"label": "새로운 제품을 쓰면 쉽게 자극이 생긴다", "effects": {"sensitivity": 3.0}},
+     ]},
+    {"key": "q6", "text": "면도 후 피부 자극이나 트러블이 생기는 편인가요?",
+     "options": [
+         {"label": "거의 없다", "effects": {"sensitivity": 0.0, "trouble": 0.0}},
+         {"label": "가끔 있다", "effects": {"sensitivity": 1.0, "trouble": 0.5}},
+         {"label": "자주 있다", "effects": {"sensitivity": 2.0, "trouble": 1.0}},
+         {"label": "면도 후 항상 신경 쓰인다", "effects": {"sensitivity": 3.0, "trouble": 1.5}},
+     ]},
+    {"key": "q7", "text": "지금 내 피부에 가장 가까운 설명은 무엇인가요?",
+     "options": [
+         {"label": "전체적으로 건조한 편이다", "effects": {"moisture": 2.4}, "direction": "건성"},
+         {"label": "전체적으로 번들거리는 편이다", "effects": {"moisture": 2.0}, "direction": "지성"},
+         {"label": "부위별로 다르다", "effects": {"moisture": 1.2, "texture": 0.8}, "direction": "복합성"},
+         {"label": "트러블이 자주 생긴다", "effects": {"trouble": 2.2}},
+         {"label": "예민하고 쉽게 자극받는다", "effects": {"sensitivity": 2.4}},
+         {"label": "잘 모르겠다", "effects": {}},
+     ]},
+]
+
+# 피부 타입 라벨 풀 - 완전 랜덤이 아니라 "가장 낮은 카테고리"를 기준으로 그중 하나를 뽑는다.
+_TYPE_LABEL_POOL = {
+    "moisture_건성": ["수분부족형 건성", "속건조 건성", "수분부족형 복합성"],
+    "moisture_지성": ["과다피지형 지성", "번들거림형 지성", "피지과다 복합성"],
+    "moisture_기타": ["밸런스 불균형 복합성", "수분부족형 복합성"],
+    "trouble": ["트러블형 지성", "트러블형 복합성", "트러블 케어 필요형"],
+    "sensitivity": ["민감성 건성", "홍조 민감형", "민감성 복합성"],
+    "tone": ["칙칙톤 관리형", "톤불균일 케어형", "다크서클 케어형"],
+    "texture": ["모공관리형 복합성", "피부결 개선형", "모공케어 지성"],
+    "balanced": ["균형형 보통 피부", "밸런스 좋은 중성 피부", "안정형 피부"],
 }
 
 
-def _summary_for_score(score: int, age: int, stype: str) -> str:
-    """점수대에 맞는 설명을 랜덤으로 하나 골라 반환."""
-    if score >= 90:
-        band = "excellent"
-    elif score >= 80:
-        band = "great"
-    elif score >= 70:
-        band = "good"
+def _severity_to_range(sev: float) -> tuple[int, int]:
+    """설문 응답의 '심각도'(0=좋음~3=나쁨)를 그럴듯한 점수 범위로 변환한다.
+    완전 무작위가 아니라 응답에 따라 범위 자체가 달라지게 하는 핵심 로직."""
+    sev = max(0.0, min(3.0, sev))
+    anchors = [(0.0, (78, 95)), (1.0, (62, 82)), (2.0, (44, 64)), (3.0, (22, 46))]
+    for (s0, (lo0, hi0)), (s1, (lo1, hi1)) in zip(anchors, anchors[1:]):
+        if s0 <= sev <= s1:
+            t = (sev - s0) / (s1 - s0)
+            return round(lo0 + (lo1 - lo0) * t), round(hi0 + (hi1 - hi0) * t)
+    return anchors[-1][1]
+
+
+def compute_survey_scores(answers: dict) -> tuple[dict, str]:
+    """설문 답변(question key -> 선택한 라벨)으로 카테고리별 '설문 점수'와
+    유수분 타입(건성/지성/복합성/중성)을 계산한다."""
+    sums = {k: 0.0 for k in _CATEGORY_KEYS}
+    counts = {k: 0 for k in _CATEGORY_KEYS}
+    direction_votes = []
+    for q in SURVEY_QUESTIONS:
+        opt = next((o for o in q["options"] if o["label"] == answers.get(q["key"])), None)
+        if not opt:
+            continue
+        for cat, val in opt.get("effects", {}).items():
+            sums[cat] += val
+            counts[cat] += 1
+        if opt.get("direction"):
+            direction_votes.append(opt["direction"])
+
+    survey_scores = {}
+    for cat in _CATEGORY_KEYS:
+        avg_severity = sums[cat] / counts[cat] if counts[cat] else 1.3  # 관련 응답 없으면 보통 수준
+        lo, hi = _severity_to_range(avg_severity)
+        survey_scores[cat] = random.randint(lo, hi)
+
+    moisture_direction = Counter(direction_votes).most_common(1)[0][0] if direction_votes else "중성"
+    return survey_scores, moisture_direction
+
+
+def build_skin_type_label(categories: dict, moisture_direction: str) -> str:
+    """가장 낮은(안 좋은) 카테고리를 기준으로 그럴듯한 피부 타입 라벨을 뽑는다."""
+    worst_key = min(categories, key=categories.get)
+    if categories[worst_key] >= 72:
+        return random.choice(_TYPE_LABEL_POOL["balanced"])
+    if worst_key == "moisture":
+        pool_key = f"moisture_{moisture_direction}" if f"moisture_{moisture_direction}" in _TYPE_LABEL_POOL \
+            else "moisture_기타"
     else:
-        band = "care"
-    return random.choice(_SCORE_SUMMARIES[band]).format(age=age, stype=stype)
+        pool_key = worst_key
+    return random.choice(_TYPE_LABEL_POOL.get(pool_key, _TYPE_LABEL_POOL["balanced"]))
 
 
-def random_diagnose(age: int, moisture: str = "보통", tone: str = "보통",
-                    flush: bool = False, extra: list | None = None) -> dict:
-    """나이 + 사용자가 체크한 피부 상태로 진단 결과 생성.
-    점수는 랜덤이고, 설명은 점수대에 맞춰 랜덤으로 뽑는다 (API/서버 호출 없음)."""
-    score = random.randint(60, 98)  # 최소 60점 이상 보장
-    # 사용자가 고른 유수분 값이 곧 피부 타입 (건성/지성/복합성/민감성).
-    if moisture in _SKIN_TYPES:
-        skin_type = moisture
-    else:
-        skin_type = _MOISTURE_TO_TYPE.get(moisture, random.choice(_SKIN_TYPES))
+def summary_from_categories(categories: dict) -> str:
+    """가장 낮은 1~2개 카테고리를 기준으로 한 줄 요약을 만든다."""
+    ranked = sorted(categories.items(), key=lambda x: x[1])
+    worst_key, worst_score = ranked[0]
+    second_key, second_score = ranked[1]
+    best_key, _best_score = ranked[-1]
+    if worst_score < 55:
+        if second_score < 62 and second_key != worst_key:
+            return f"{_CATEGORY_LABELS[worst_key]}과 {_CATEGORY_LABELS[second_key]} 관리가 우선적으로 필요합니다."
+        return f"{_CATEGORY_LABELS[worst_key]} 관리가 우선적으로 필요합니다."
+    if worst_score < 72:
+        return f"{_CATEGORY_LABELS[best_key]}는 양호하지만 {_CATEGORY_LABELS[worst_key]} 개선이 필요합니다."
+    if worst_score < 85:
+        return f"전반적으로 안정적이지만 {_CATEGORY_LABELS[worst_key]} 관리 여지가 있습니다."
+    return "전체적으로 균형 잡힌 우수한 피부 상태예요! 지금 루틴을 그대로 유지해보세요."
 
-    # 사용자가 체크한 항목을 고민으로 반영
-    concerns = list(extra or [])
-    if flush:
-        concerns.insert(0, "홍조")
-    if moisture in ("건성", "약간 건성"):
-        concerns.append("속건조")
-    if moisture in ("지성", "약간 지성"):
-        concerns.append("번들거림(유분)")
-    if tone == "어두운 편":
-        concerns.append("칙칙함")
-    concerns = list(dict.fromkeys(concerns))[:4] or ["전반적으로 안정적"]
 
-    # 고민 기반 추천 성분 (부족하면 랜덤으로 채움)
+def concerns_from_categories(categories: dict, moisture_direction: str) -> list[str]:
+    """점수가 낮은 카테고리들을 기존 '고민' 단어로 변환한다 (챗봇 맥락·성분 추천에 재사용)."""
+    concerns = []
+    for key, score in sorted(categories.items(), key=lambda x: x[1]):
+        if score >= 65:
+            continue
+        if key == "moisture":
+            concerns.append("속건조" if moisture_direction == "건성" else "번들거림(유분)")
+        else:
+            concerns.append(_CATEGORY_CONCERN.get(key, key))
+    return concerns[:4] or ["전반적으로 안정적"]
+
+
+def ingredients_from_concerns(concerns: list[str]) -> list[str]:
+    """고민 목록 기반 추천 성분 (부족하면 랜덤으로 채움)."""
     ingredients = [_CONCERN_TO_INGREDIENT[c] for c in concerns if c in _CONCERN_TO_INGREDIENT]
     for ing in random.sample(_INGREDIENT_POOL, k=len(_INGREDIENT_POOL)):
         if len(ingredients) >= 3:
             break
         ingredients.append(ing)
-    ingredients = list(dict.fromkeys(ingredients))[:3]
+    return list(dict.fromkeys(ingredients))[:3]
 
-    summary = _summary_for_score(score, age, skin_type)
+
+def simulate_ai_diagnosis(answers: dict) -> dict:
+    """설문 답변으로 'AI가 분석한 것처럼' 보이는 진단 결과를 생성한다.
+    실제 이미지 분석/모델 추론은 전혀 하지 않고, 설문 기반 랜덤 점수(70%)와
+    순수 랜덤 이미지 점수(30%)를 카테고리별로 합성해 최종 점수를 만든다."""
+    survey_scores, moisture_direction = compute_survey_scores(answers)
+    # '이미지 분석'을 흉내 내는 값 - 실제 분석 없이 카테고리별로 독립적인 랜덤값만 생성한다.
+    image_scores = {cat: random.randint(45, 92) for cat in _CATEGORY_KEYS}
+
+    categories = {}
+    for cat in _CATEGORY_KEYS:
+        blended = survey_scores[cat] * 0.7 + image_scores[cat] * 0.3
+        categories[cat] = max(0, min(100, round(blended)))
+
+    # 최종 피부 점수는 항상 위 카테고리 점수의 가중합으로 계산 -> 화면 표시값과 100% 일치.
+    final_score = max(0, min(100, round(
+        sum(categories[c] * _CATEGORY_WEIGHTS[c] for c in _CATEGORY_KEYS))))
+
+    concerns = concerns_from_categories(categories, moisture_direction)
     return {
-        "score": score,
-        "gain": random.randint(2, 16),  # 피부 턴오버 동안 상승한 점수
-        "skin_type": skin_type,
+        "score": final_score,
+        "categories": categories,
+        "survey_categories": survey_scores,
+        "image_categories": image_scores,
+        "skin_type": moisture_direction,
+        "type_label": build_skin_type_label(categories, moisture_direction),
+        "summary": summary_from_categories(categories),
         "concerns": concerns,
-        "summary": summary,
-        "recommended_ingredients": ingredients,
+        "recommended_ingredients": ingredients_from_concerns(concerns),
+        "gain": random.randint(3, 18),  # 피부 턴오버(28일) 동안의 예상 개선 점수
+        "answers": answers,
     }
 
 
@@ -739,6 +899,14 @@ CUSTOM_CSS = """
 .cl-chips span { background: rgba(255,255,255,0.05); border: 1px solid var(--glass-brd);
   font-size: 12px; padding: 6px 13px; border-radius: 999px; color: var(--text); }
 .cl-chips--accent span { background: var(--accent-dim); border-color: transparent; color: var(--accent); }
+
+/* ---- 진단 결과: 카테고리별 점수 바 ---- */
+.cl-catbar { margin-bottom: 14px; }
+.cl-catbar__top { display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13.5px; font-weight: 700; margin-bottom: 6px; }
+.cl-catbar__top span:last-child { font-family: 'Space Grotesk', monospace; color: var(--accent); }
+.cl-catbar__track { height: 10px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.cl-catbar__fill { display: block; height: 100%; border-radius: 999px; transition: width 0.6s ease; }
 
 /* ---- 랭킹 ---- */
 .cl-rank { display: flex; align-items: center; gap: 14px; background: var(--glass);
@@ -1355,83 +1523,166 @@ def _inject_camera_overlay() -> None:
     )
 
 
-def render_age_diagnosis() -> None:
-    """나이 + 피부 상태 체크 후 촬영하면 (랜덤) 점수를 내고 랭킹에 반영한다."""
-    st.markdown('<div class="cl-sec">DIAGNOSIS</div>', unsafe_allow_html=True)
-    st.markdown('<div class="cl-h">AI 피부 진단</div>', unsafe_allow_html=True)
-    st.caption("나이와 피부 상태를 체크하고 촬영하면 내 피부 점수를 알려드려요.")
+def _catbar_colors(score: int) -> tuple[str, str]:
+    """카테고리 점수대에 맞는 바 그라디언트 색상 (낮을수록 앰버, 높을수록 민트)."""
+    if score >= 80:
+        return "#5eead4", "#43d3b0"
+    if score >= 60:
+        return "#a8e8d6", "#5eead4"
+    return "#ffd98a", "#f4c15e"
 
-    age = st.number_input("나이", min_value=10, max_value=90, value=28, step=1)
-    moisture = st.radio("피부 유수분", ["건성", "지성", "복합성", "민감성"], horizontal=True)
-    tone = st.radio("피부 밝기", ["어두운 편", "밝은 편", "중간 편"], horizontal=True)
-    flush = st.radio("홍조(붉은기)", ["없음", "있음"], horizontal=True) == "있음"
-    extra = st.multiselect(
-        "그 외 신경 쓰이는 부분 (복수 선택)",
-        ["트러블", "모공", "칙칙함", "다크서클", "각질", "속건조"])
 
-    run = st.button("피부 진단받기", type="primary", use_container_width=True)
-    if run:
-        st.session_state.show_camera = True
-        st.session_state.pop("last_diagnosis", None)  # 새 진단 시작 - 이전 결과 초기화
-
-    # 진단 버튼을 누르면 카메라가 뜨고, 촬영한 사진으로 결과를 만든다.
-    if st.session_state.get("show_camera"):
-        st.caption("📸 얼굴이 잘 보이도록 **정면**에서 촬영해주세요. "
-                   "매번 최대한 **비슷한 공간(조명·배경)**에서 찍으면 피부 변화를 더 정확하게 볼 수 있어요.")
-        st.caption("👤 화면의 점선 가이드 안에 얼굴을 꽉 차게 맞춰주세요. (가이드 밖은 흐리게 처리돼요)")
-        _inject_camera_overlay()
-        shot = st.camera_input("피부 촬영", label_visibility="collapsed")
-        if shot is not None:
-            with st.spinner("max가 피부를 분석하는 중이에요... 🫧"):
-                time.sleep(1.2)  # 분석하는 느낌을 주는 잠깐의 대기
-                # 서버/AI 호출 없이, 입력값 기반으로 점수대에 맞는 결과를 생성한다.
-                result = random_diagnose(int(age), moisture, tone, flush, extra)
-            st.session_state.last_diagnosis = result
-            # 진단 기록을 사이트 전체에 누적 저장 (랭킹에 반영)
-            rec_id = time.time_ns()
-            recs = recommend_products(result)
-            nickname = (st.session_state.get("user_name") or "").strip() or "익명"
-            save_record({
-                "id": rec_id,
-                "name": nickname,
-                # 지목 매치에서 마스킹 없이 정확히 검색하기 위한 별도 필드 (name과 같은 값을
-                # 저장하지만, 추후 name이 마스킹되더라도 매치 검색은 영향받지 않게 분리해둔다).
-                "nickname": nickname,
-                "age_group": f"{(int(age) // 10) * 10}대",
-                "skin_type": result.get("skin_type", "-"),
-                "score": result["score"],
-                "gain": result.get("gain", max(2, min(16, 100 - result["score"]))),
-                "product": recs[0]["name"] if recs else "-",
-            })
-            st.session_state.my_record_id = rec_id
-            st.session_state.show_camera = False
-            st.rerun()
-
-    result = st.session_state.get("last_diagnosis")
-    if result:
-        concerns = "".join(f"<span>{c}</span>" for c in result.get("concerns", []))
+def render_category_bars(categories: dict) -> None:
+    """5개 세부 카테고리 점수를 가로 바(progress bar)로 보여준다."""
+    for key in _CATEGORY_KEYS:
+        score = categories.get(key, 0)
+        c1, c2 = _catbar_colors(score)
         st.markdown(
-            f'<div class="cl-result">'
-            f'<p class="cl-result__label">SKIN SCORE</p>'
-            f'<p class="cl-result__score">{result.get("score", "-")}</p>'
-            f'<p class="cl-result__type">피부 타입 · {result.get("skin_type", "-")}</p>'
-            f'<p class="cl-result__summary">{result.get("summary", "")}</p>'
-            f'<div class="cl-chips">{concerns}</div>'
-            f'</div>',
+            f'<div class="cl-catbar"><div class="cl-catbar__top">'
+            f'<span>{_CATEGORY_LABELS[key]}</span><span>{score}점</span></div>'
+            f'<div class="cl-catbar__track"><span class="cl-catbar__fill" '
+            f'style="width:{score}%;background:linear-gradient(90deg,{c1},{c2})"></span></div></div>',
             unsafe_allow_html=True,
         )
 
-        # 내 피부에 맞는 추천 제품 + 구매 링크
-        st.markdown('<div class="cl-sec">RECOMMENDED</div>', unsafe_allow_html=True)
-        st.markdown('<div class="cl-h">내 피부 맞춤 추천 제품</div>', unsafe_allow_html=True)
-        for p in recommend_products(result):
-            st.markdown(
-                f'<div class="cl-rec"><div class="cl-rec__body">'
-                f'<div class="cl-rec__name">{p.get("name", "")}</div>'
-                f'<div class="cl-rec__reason">{p.get("reason", "")}</div></div>'
-                f'{buy_buttons(p.get("name", ""))}</div>',
-                unsafe_allow_html=True,
+
+def render_photo_stage() -> None:
+    """진단 1단계 - 얼굴 사진을 촬영하거나 업로드한다 (실제 이미지 분석은 하지 않음)."""
+    st.markdown('<div class="cl-sec">STEP 1 · PHOTO</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">얼굴 사진을 준비해주세요</div>', unsafe_allow_html=True)
+    st.caption("촬영하거나 갤러리에서 업로드해주세요. 다음 설문과 함께 분석에 활용돼요.")
+
+    st.number_input("나이", min_value=10, max_value=90, value=25, step=1, key="diag_age")
+    mode = st.radio("사진 입력 방식", ["촬영하기", "업로드하기"], horizontal=True,
+                    label_visibility="collapsed", key="diag_photo_mode")
+
+    photo = None
+    if mode == "촬영하기":
+        st.caption("📸 얼굴이 잘 보이도록 **정면**에서 촬영해주세요.")
+        st.caption("👤 화면의 점선 가이드 안에 얼굴을 꽉 차게 맞춰주세요. (가이드 밖은 흐리게 처리돼요)")
+        _inject_camera_overlay()
+        photo = st.camera_input("피부 촬영", label_visibility="collapsed", key="diag_camera")
+    else:
+        photo = st.file_uploader("얼굴 사진 업로드", type=["png", "jpg", "jpeg"],
+                                 label_visibility="collapsed", key="diag_upload")
+        if photo is not None:
+            st.image(photo, caption="업로드한 사진", width=220)
+
+    if photo is not None:
+        if st.button("다음: 설문 진행하기 →", type="primary", use_container_width=True,
+                     key="diag_photo_next"):
+            st.session_state.diag_stage = "survey"
+            st.rerun()
+
+
+def render_survey_stage() -> None:
+    """진단 2단계 - 피부 설문 7문항."""
+    st.markdown('<div class="cl-sec">STEP 2 · SURVEY</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">피부 설문 7문항</div>', unsafe_allow_html=True)
+    st.caption("솔직하게 답할수록 더 정확한 맞춤 결과가 나와요.")
+
+    with st.form(key="survey_form"):
+        answers = {}
+        for i, q in enumerate(SURVEY_QUESTIONS, start=1):
+            st.markdown(f"**Q{i}. {q['text']}**")
+            answers[q["key"]] = st.radio(
+                q["text"], [o["label"] for o in q["options"]],
+                label_visibility="collapsed", key=f"survey_{q['key']}",
             )
+        submitted = st.form_submit_button(
+            "AI 분석 시작하기", type="primary", use_container_width=True)
+
+    if submitted:
+        st.session_state.diag_answers = answers
+        st.session_state.diag_stage = "loading"
+        st.rerun()
+
+    if st.button("← 사진 다시 선택하기", key="diag_back_photo"):
+        st.session_state.diag_stage = "photo"
+        st.rerun()
+
+
+def render_loading_stage() -> None:
+    """진단 3단계 - 'AI 분석 중' 로딩 후 결과를 생성하고 기록·랭킹에 반영한다."""
+    render_analysis_loading()
+
+    answers = st.session_state.get("diag_answers", {})
+    result = simulate_ai_diagnosis(answers)
+    st.session_state.last_diagnosis = result
+
+    # 진단 기록을 사이트 전체에 누적 저장 (랭킹에 반영)
+    rec_id = time.time_ns()
+    recs = recommend_products(result)
+    nickname = (st.session_state.get("user_name") or "").strip() or "익명"
+    age = int(st.session_state.get("diag_age", 25))
+    save_record({
+        "id": rec_id,
+        "name": nickname,
+        # 지목 매치에서 마스킹 없이 정확히 검색하기 위한 별도 필드 (name과 같은 값을
+        # 저장하지만, 추후 name이 마스킹되더라도 매치 검색은 영향받지 않게 분리해둔다).
+        "nickname": nickname,
+        "age_group": f"{(age // 10) * 10}대",
+        "skin_type": result.get("skin_type", "-"),
+        "type_label": result.get("type_label", "-"),
+        "score": result["score"],
+        "gain": result.get("gain", 8),
+        "product": recs[0]["name"] if recs else "-",
+    })
+    st.session_state.my_record_id = rec_id
+    st.session_state.diag_stage = "result"
+    st.rerun()
+
+
+def render_result_stage() -> None:
+    """진단 4단계 - 결과 화면: 최종 점수 -> 타입 라벨 -> 한줄요약 -> 카테고리 바 ->
+    추천 제품 -> 랭킹 바로가기 -> 28일 후 재촬영 유도 CTA."""
+    result = st.session_state.get("last_diagnosis")
+    if not result:
+        st.session_state.diag_stage = "photo"
+        st.rerun()
+        return
+
+    st.markdown('<div class="cl-sec">RESULT</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">AI 피부 분석 결과</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="cl-result">'
+        f'<p class="cl-result__label">SKIN SCORE</p>'
+        f'<p class="cl-result__score">{result.get("score", "-")}</p>'
+        f'<p class="cl-result__type">피부 타입 · {result.get("type_label", result.get("skin_type", "-"))}</p>'
+        f'<p class="cl-result__summary">{result.get("summary", "")}</p>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div class="cl-sec">ANALYSIS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">카테고리별 분석</div>', unsafe_allow_html=True)
+    render_category_bars(result.get("categories", {}))
+
+    st.markdown('<div class="cl-sec">RECOMMENDED</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">내 피부 맞춤 추천 제품</div>', unsafe_allow_html=True)
+    for p in recommend_products(result):
+        st.markdown(
+            f'<div class="cl-rec"><div class="cl-rec__body">'
+            f'<div class="cl-rec__name">{p.get("name", "")}</div>'
+            f'<div class="cl-rec__reason">{p.get("reason", "")}</div></div>'
+            f'{buy_buttons(p.get("name", ""))}</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown('<div class="cl-sec">NEXT</div>', unsafe_allow_html=True)
+    st.button("🏆 우리 동네 랭킹에서 내 순위 보기", type="primary", use_container_width=True,
+              on_click=set_nav, args=("ranking",), key="result_goto_rank")
+
+    target_date = (datetime.date.today() + datetime.timedelta(days=28)).isoformat()
+    st.markdown(
+        f'<div class="cl-note">📅 피부 턴오버 주기는 약 28일이에요. '
+        f'<b>{target_date}</b> 즈음 다시 촬영하면 얼마나 좋아졌는지 확인할 수 있어요!</div>',
+        unsafe_allow_html=True,
+    )
+    if st.button("🔁 새로운 진단 시작하기", use_container_width=True, key="result_restart"):
+        st.session_state.diag_stage = "photo"
+        st.session_state.pop("last_diagnosis", None)
+        st.rerun()
 
 
 def render_skin_map() -> None:
@@ -1523,6 +1774,16 @@ def render_ranking() -> None:
     st.caption(f"지금까지 {len(MOCK_RANKING) + len(records):,}명이 진단에 참여했어요. "
                "(진단할수록 기록이 쌓여요)")
 
+    # 내 현재 순위 (전체 기준, 나이대 필터와 무관하게 항상 보여준다)
+    all_score_sorted = sorted(board, key=lambda x: x["score"], reverse=True)
+    my_rank = next((i for i, e in enumerate(all_score_sorted, start=1) if e.get("is_me")), None)
+    if my_rank:
+        st.markdown(
+            f'<div class="cl-status-wrap"><div class="cl-status">'
+            f'<b>내 순위 {my_rank}위</b> / 전체 {len(all_score_sorted)}명 중</div></div>',
+            unsafe_allow_html=True,
+        )
+
     # 나이대 필터
     groups = ["전체", "10대", "20대", "30대", "40대", "50대 이상"]
     picked = st.radio("나이대", groups, horizontal=True, label_visibility="collapsed")
@@ -1611,7 +1872,16 @@ def render_ranking() -> None:
 
 def render_diagnosis_screen() -> None:
     render_header()
-    render_age_diagnosis()
+    stage = st.session_state.get("diag_stage", "photo")
+    if stage == "survey":
+        render_survey_stage()
+    elif stage == "loading":
+        render_loading_stage()
+        return  # 로딩 직후 st.rerun()으로 넘어가므로 아래 이동 버튼은 그릴 필요 없음
+    elif stage == "result":
+        render_result_stage()
+    else:
+        render_photo_stage()
 
     st.markdown('<div class="cl-sec">MOVE</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
