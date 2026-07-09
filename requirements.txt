@@ -2,5 +2,3 @@ streamlit==1.59.0
 anthropic==0.39.0
 pillow>=10.0.0
 numpy>=1.26
-pandas>=2.0
-streamlit-geolocation>=0.0.10

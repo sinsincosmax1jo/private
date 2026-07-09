@@ -24,58 +24,26 @@ import random
 from io import BytesIO
 
 import numpy as np
-import pandas as pd
 import streamlit as st
 import anthropic
 from PIL import Image
 
-try:  # 배포 환경에 tensorflow 휠이 없을 수도 있으므로 미설치 시에도 앱이 동작하도록 가드
-    import tensorflow as tf
-    _HAS_TF = True
-except Exception:  # noqa: BLE001
-    tf = None
-    _HAS_TF = False
-
-try:  # 위치(GPS) 컴포넌트 - 미설치 시에도 앱이 동작하도록 가드
-    from streamlit_geolocation import streamlit_geolocation
-    _HAS_GEO = True
-except Exception:  # noqa: BLE001
-    _HAS_GEO = False
-
 MODEL_NAME = "claude-sonnet-5"
 LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clozkin_logo.png")
-MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model", "skin_cnn_model.keras")
 # 진단 기록을 누적 저장하는 파일 (사이트 전체 랭킹에 반영)
 RECORDS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skin_records.json")
-CLASS_NAMES = ["acne", "bags", "dry", "normal", "oily", "redness"]
-SKIN_TYPE_LABELS = {"dry": "건성", "normal": "중성", "oily": "지성"}
-CONCERN_LABELS = {"acne": "여드름", "bags": "다크서클/눈밑처짐", "redness": "홍조"}
-_RECOMMENDED_INGREDIENTS = {
-    ("건성", "acne"): ["세라마이드", "판테놀"],
-    ("건성", "bags"): ["히알루론산", "카페인"],
-    ("건성", "redness"): ["센텔라", "세라마이드"],
-    ("건성", None): ["히알루론산", "세라마이드"],
-    ("중성", "acne"): ["나이아신아마이드", "판테놀"],
-    ("중성", "bags"): ["히알루론산", "카페인"],
-    ("중성", "redness"): ["센텔라", "나이아신아마이드"],
-    ("중성", None): ["나이아신아마이드", "판테놀"],
-    ("지성", "acne"): ["살리실산", "나이아신아마이드"],
-    ("지성", "bags"): ["카페인", "판테놀"],
-    ("지성", "redness"): ["센텔라", "판테놀"],
-    ("지성", None): ["나이아신아마이드", "살리실산"],
-}
 
 # ---------------------------------------------------------------------------
 # 우리 동네 피부 랭킹 - 목업 데이터 (실제 서비스에서는 DB에서 조회)
 # ---------------------------------------------------------------------------
 MOCK_RANKING = [
-    {"name": "김민우", "age_group": "20대", "score": 91, "gain": 7, "product": "라운드랩 자작나무 수분 크림"},
-    {"name": "이준호", "age_group": "30대", "score": 87, "gain": 12, "product": "아누아 어성초 77 토너"},
-    {"name": "박서진", "age_group": "20대", "score": 83, "gain": 5, "product": "달바 워터풀 에센스 선크림"},
-    {"name": "최도현", "age_group": "30대", "score": 79, "gain": 15, "product": "라로슈포제 시카플라스트 밤 B5"},
-    {"name": "정우석", "age_group": "40대", "score": 74, "gain": 9, "product": "닥터지 블랙 스네일 크림"},
-    {"name": "강태오", "age_group": "10대", "score": 68, "gain": 18, "product": "세타필 데일리 클렌저"},
-    {"name": "조현우", "age_group": "20대", "score": 63, "gain": 3, "product": "이니스프리 그린티 씨드 세럼"},
+    {"name": "서초동 피부왕자", "age_group": "20대", "skin_type": "복합성", "score": 91, "gain": 7, "product": "토리든 다이브인 저분자 히알루론산 세럼"},
+    {"name": "상도동 도자기피부", "age_group": "30대", "skin_type": "수부지", "score": 87, "gain": 12, "product": "라로슈포제 에빠끌라 토너"},
+    {"name": "판교 물광남", "age_group": "20대", "skin_type": "건성", "score": 83, "gain": 5, "product": "라운드랩 자작나무 수분 크림"},
+    {"name": "해운대 꿀피부", "age_group": "30대", "skin_type": "지성", "score": 79, "gain": 15, "product": "파티온 노스카나인 트러블 세럼"},
+    {"name": "연남동 무결점", "age_group": "40대", "skin_type": "민감성", "score": 74, "gain": 9, "product": "에스트라 에이시카365 수분 진정 크림"},
+    {"name": "성수동 광채남", "age_group": "10대", "skin_type": "지성", "score": 68, "gain": 18, "product": "닥터자르트 시카페어 토너"},
+    {"name": "잠실 트러블졸업", "age_group": "20대", "skin_type": "복합성", "score": 63, "gain": 3, "product": "라로슈포제 시카플라스트 밤 B5"},
 ]
 
 # 많이 쓰는 화장품 랭킹 - 목업 데이터 (users = 동네 사용자 수)
@@ -87,6 +55,27 @@ MOCK_PRODUCT_RANKING = [
     {"name": "라로슈포제 시카플라스트 밤", "category": "밤·연고", "users": 812},
     {"name": "센카 퍼펙트 휩 클렌징폼", "category": "클렌저", "users": 774},
     {"name": "이니스프리 노세범 미네랄 파우더", "category": "피지관리", "users": 689},
+]
+
+# 개선 상승폭이 큰 사람들이 많이 쓰는 제품 랭킹 - 목업 데이터
+# (avg_gain = 이 제품을 쓴 급상승 유저들의 평균 점수 상승폭)
+MOCK_IMPROVER_PRODUCTS = [
+    {"name": "파티온 노스카나인 트러블 세럼", "category": "세럼", "avg_gain": 16},
+    {"name": "라로슈포제 시카플라스트 밤 B5", "category": "밤·연고", "avg_gain": 15},
+    {"name": "에스트라 에이시카365 수분 진정 크림", "category": "진정크림", "avg_gain": 13},
+    {"name": "닥터자르트 시카페어 토너", "category": "토너", "avg_gain": 12},
+    {"name": "라로슈포제 에빠끌라 토너", "category": "토너", "avg_gain": 11},
+    {"name": "토리든 다이브인 저분자 히알루론산 세럼", "category": "세럼", "avg_gain": 9},
+]
+
+# 3개월 사용 화장품 내역용 제품 풀 (랭킹 유저별 주문서에 표시)
+_HISTORY_POOL = [
+    "라운드랩 자작나무 수분 크림", "아누아 어성초 77 토너", "토리든 다이브인 세럼",
+    "라로슈포제 에빠끌라 토너", "파티온 노스카나인 트러블 세럼",
+    "에스트라 에이시카365 수분 진정 크림", "닥터자르트 시카페어 토너",
+    "닥터지 레드 블레미쉬 진정 크림", "센카 퍼펙트 휩 클렌징폼",
+    "이니스프리 노세범 미네랄 파우더", "라로슈포제 안뗄리오스 선크림",
+    "우르오스 스킨워시 클렌저",
 ]
 
 # 구매 내역 - 목업 데이터 (남성용 화장품 / 여러 쇼핑몰)
@@ -103,17 +92,17 @@ MOCK_PURCHASES = [
 # 쇼핑몰별 대표 색상
 SITE_COLORS = {"올리브영": "#a3d977", "네이버": "#03c75a", "쿠팡": "#f7541f", "무신사": "#d9dde1"}
 
-# 피부 좋은 남자들 전국 분포 - 목업 데이터 (x/y = 지도 박스 내 % 위치)
+# 피부 좋은 남자들 전국 분포 - 목업 데이터 (x/y = 지도 이미지 내 % 위치)
 MOCK_REGIONS = [
-    {"name": "서울", "count": 342, "x": 39, "y": 20},
-    {"name": "경기", "count": 288, "x": 45, "y": 29},
-    {"name": "인천", "count": 121, "x": 29, "y": 25},
-    {"name": "강원", "count": 76, "x": 67, "y": 19},
-    {"name": "대전", "count": 134, "x": 45, "y": 47},
-    {"name": "대구", "count": 118, "x": 67, "y": 53},
-    {"name": "부산", "count": 156, "x": 74, "y": 68},
-    {"name": "광주", "count": 98, "x": 33, "y": 66},
-    {"name": "제주", "count": 41, "x": 33, "y": 92},
+    {"name": "서울", "count": 342, "x": 39, "y": 22},
+    {"name": "경기", "count": 288, "x": 48, "y": 31},
+    {"name": "인천", "count": 121, "x": 29, "y": 27},
+    {"name": "강원", "count": 76, "x": 66, "y": 17},
+    {"name": "대전", "count": 134, "x": 46, "y": 47},
+    {"name": "대구", "count": 118, "x": 61, "y": 54},
+    {"name": "부산", "count": 156, "x": 70, "y": 66},
+    {"name": "광주", "count": 98, "x": 34, "y": 62},
+    {"name": "제주", "count": 41, "x": 31, "y": 90},
 ]
 
 EVENT_LABELS = {
@@ -181,27 +170,6 @@ def buy_buttons(product_name: str) -> str:
             f'{price_button(product_name)}</div>')
 
 
-def nearby_points(lat: float, lon: float) -> "pd.DataFrame":
-    """내 위치(민트) + 주변 사용자(회색) + 주변 피부과(빨강) 좌표 DataFrame."""
-    users = [
-        (0.0, 0.0), (0.0042, 0.0031), (-0.0035, 0.0044), (0.0051, -0.0039),
-        (-0.0048, -0.0028), (0.0022, 0.0059), (-0.0061, 0.0018),
-    ]
-    rows = [
-        {"lat": lat + dy, "lon": lon + dx,
-         "color": "#43d3b0" if i == 0 else "#9aa4ad",
-         "size": 130 if i == 0 else 70}
-        for i, (dy, dx) in enumerate(users)
-    ]
-    # 주변 피부과 (빨강)
-    clinics = [(0.0028, -0.0018), (-0.0026, 0.0022), (0.0016, 0.0041), (-0.0044, -0.0006)]
-    rows += [
-        {"lat": lat + dy, "lon": lon + dx, "color": "#ff5a6a", "size": 95}
-        for dy, dx in clinics
-    ]
-    return pd.DataFrame(rows)
-
-
 def recommend_products(diagnosis: dict) -> list[dict]:
     """진단 결과(피부 타입)에 맞춘 추천 제품 목록. 이벤트 대비 선크림 포함."""
     skin_type = diagnosis.get("skin_type", "")
@@ -210,6 +178,21 @@ def recommend_products(diagnosis: dict) -> list[dict]:
     picks.append({"name": "라로슈포제 안뗄리오스 선크림",
                   "reason": "자외선 차단은 피부 관리의 기본이에요"})
     return picks[:3]
+
+
+def person_history(name: str) -> list[dict]:
+    """랭킹 유저의 최근 3개월 사용 화장품 내역(목업)을 이름 기반으로 안정적으로 생성."""
+    seed = sum(ord(c) for c in name) or 1
+    rnd = random.Random(seed)
+    count = rnd.randint(3, 5)
+    picks = rnd.sample(_HISTORY_POOL, min(count, len(_HISTORY_POOL)))
+    months = ["2026-06", "2026-05", "2026-04"]  # 최근 3개월
+    history = [
+        {"product": p, "date": f"{rnd.choice(months)}-{rnd.randint(1, 28):02d}"}
+        for p in picks
+    ]
+    history.sort(key=lambda h: h["date"], reverse=True)
+    return history
 
 
 # ---------------------------------------------------------------------------
@@ -229,100 +212,6 @@ def get_api_key() -> str | None:
 @st.cache_resource(show_spinner=False)
 def get_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
-
-
-@st.cache_resource(show_spinner=False)
-def load_skin_model():
-    """CNN 모델을 로드. tensorflow가 없거나 로드에 실패하면 None을 반환해
-    diagnose_skin()이 앱 전체를 죽이지 않고 기본 결과로 대체할 수 있게 한다."""
-    if not _HAS_TF:
-        return None
-    try:
-        return tf.keras.models.load_model(MODEL_PATH)
-    except Exception:  # noqa: BLE001
-        return None
-
-
-_MODEL_UNAVAILABLE_RESULT = {
-    "score": 70,
-    "skin_type": "중성",
-    "concerns": [],
-    "summary": "지금은 AI 분석 서버 연결이 원활하지 않아 기본 결과를 보여드려요. 잠시 후 다시 시도해주세요.",
-    "recommended_ingredients": ["히알루론산", "세라마이드"],
-}
-
-
-def diagnose_skin(image_bytes: bytes) -> dict:
-    """업로드된 이미지 바이트를 로컬 CNN 모델로 분석해 진단 결과를 반환한다."""
-    model = load_skin_model()
-    if model is None:
-        return dict(_MODEL_UNAVAILABLE_RESULT)
-
-    image = Image.open(BytesIO(image_bytes)).convert("RGB").resize((224, 224))
-    image_array = np.array(image, dtype=np.float32)
-    image_array = np.expand_dims(image_array, axis=0)
-
-    probs = np.asarray(model.predict(image_array, verbose=0)[0], dtype=np.float32)
-
-    skin_probs = {
-        "dry": float(probs[2]),
-        "normal": float(probs[3]),
-        "oily": float(probs[4]),
-    }
-    skin_type_key = max(skin_probs, key=skin_probs.get)
-    skin_type = SKIN_TYPE_LABELS[skin_type_key]
-
-    concern_candidates = [
-        ("acne", float(probs[0])),
-        ("bags", float(probs[1])),
-        ("redness", float(probs[5])),
-    ]
-    concern_candidates.sort(key=lambda item: item[1], reverse=True)
-    active_concerns = [
-        CONCERN_LABELS[name]
-        for name, probability in concern_candidates
-        if probability >= 0.3
-    ]
-    highest_concern = next(
-        (name for name, probability in concern_candidates if probability >= 0.3),
-        None,
-    )
-
-    # 6개 클래스 확률을 기반으로 점수를 계산한다. 클래스별로 심각도에 따라
-    # 차등 가중치를 둔다: 여드름(acne)이 가장 크게 감점되고, 다크서클/눈밑처짐
-    # (bags)·홍조(redness)는 중간 수준으로 감점된다. 건성/지성(dry/oily)은
-    # "문제"가 아닌 피부 타입일 뿐이라 감점을 작게 두고, normal은 가점한다.
-    class_weights = {
-        "acne": -0.45,
-        "bags": -0.25,
-        "dry": -0.05,
-        "normal": 0.10,
-        "oily": -0.05,
-        "redness": -0.30,
-    }
-    weighted_score = sum(
-        class_weights[name] * float(prob)
-        for name, prob in zip(CLASS_NAMES, probs)
-    ) * 100
-    score = int(np.clip(100 + weighted_score, 0, 100))
-
-    if active_concerns:
-        summary = f"{skin_type} 피부이며 {', '.join(active_concerns)} 경향이 보여요"
-    else:
-        summary = f"{skin_type} 피부로 특별한 트러블 없이 안정적인 상태예요"
-
-    ingredient_key = (skin_type, highest_concern)
-    recommended_ingredients = _RECOMMENDED_INGREDIENTS.get(ingredient_key)
-    if recommended_ingredients is None:
-        recommended_ingredients = _RECOMMENDED_INGREDIENTS.get((skin_type, None), ["히알루론산", "세라마이드"])
-
-    return {
-        "score": score,
-        "skin_type": skin_type,
-        "concerns": active_concerns,
-        "summary": summary,
-        "recommended_ingredients": recommended_ingredients,
-    }
 
 
 @st.cache_data(show_spinner=False)
@@ -363,12 +252,37 @@ def logo_data_uri(size: int = 300) -> str | None:
 
 SLIME_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mint_pixel_slime.png")
 
+# 피부랭킹 지도 배경 이미지. 'map_image' 파일을 우선 찾고, 없으면 기존 한국 지도 파일 사용.
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_MAP_CANDIDATES = [
+    "map_image.png", "map_image.jpg", "map_image.jpeg", "map_image.webp",
+    "korea_mint_70_transparent.png",
+]
+MAP_PATH = next(
+    (os.path.join(_BASE_DIR, n) for n in _MAP_CANDIDATES
+     if os.path.exists(os.path.join(_BASE_DIR, n))),
+    os.path.join(_BASE_DIR, "korea_mint_70_transparent.png"),
+)
+
 
 @st.cache_data(show_spinner=False)
 def slime_data_uri(size: int = 96) -> str | None:
     """귀여운 슬라임 마스코트 이미지를 data URI로 반환 (지도 마커용)."""
     try:
         img = Image.open(SLIME_PATH).convert("RGBA")
+    except (OSError, FileNotFoundError):
+        return None
+    img.thumbnail((size, size), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+@st.cache_data(show_spinner=False)
+def map_data_uri(size: int = 720) -> str | None:
+    """피부랭킹 지도 배경 이미지를 data URI로 반환."""
+    try:
+        img = Image.open(MAP_PATH).convert("RGBA")
     except (OSError, FileNotFoundError):
         return None
     img.thumbnail((size, size), Image.LANCZOS)
@@ -474,11 +388,54 @@ _CONCERN_TO_INGREDIENT = {
 }
 
 
+# 점수대(밴드)별 설명 문구 풀 - 진단 결과 요약을 점수대에 맞게 랜덤으로 뽑는다.
+_SCORE_SUMMARIES = {
+    "excellent": [  # 90점 이상
+        "와, {age}세 기준 최상위권이에요! max도 감탄하는 완벽한 피부 컨디션이에요 ✨",
+        "지금 이 상태, 거의 도자기예요. 하던 루틴 그대로 쭉 유지해주세요 👑",
+        "관리 고수시네요! {stype} 피부인데도 트러블 없이 아주 안정적이에요.",
+    ],
+    "great": [  # 80~89점
+        "{age}세 평균보다 훨씬 관리가 잘 되고 있어요! 지금 루틴 유지 추천 👍",
+        "상위권 피부예요. 보습만 조금 더 신경 쓰면 최상급도 금방이에요 💧",
+        "{stype} 피부 밸런스가 좋아요. 포인트 케어만 더하면 완벽해요!",
+    ],
+    "good": [  # 70~79점
+        "{age}세 기준 딱 평균 정도예요. 보습만 챙겨도 확 좋아질 거예요.",
+        "기본기는 탄탄해요! {stype} 피부에 맞는 세럼 하나만 더해봐요 😉",
+        "무난하고 안정적인 상태예요. 꾸준함이 더해지면 점수가 쑥 오를 거예요.",
+    ],
+    "care": [  # 60~69점
+        "요즘 컨디션이 살짝 지쳐 보여요. max랑 수분 채우기부터 시작해봐요 💧",
+        "{stype} 피부라 지금은 진정·보습이 가장 중요해요. 천천히 같이 가봐요!",
+        "괜찮아요, 지금부터가 시작이에요. 기본 루틴만 잡아도 확 달라져요 🌱",
+    ],
+}
+
+
+def _summary_for_score(score: int, age: int, stype: str) -> str:
+    """점수대에 맞는 설명을 랜덤으로 하나 골라 반환."""
+    if score >= 90:
+        band = "excellent"
+    elif score >= 80:
+        band = "great"
+    elif score >= 70:
+        band = "good"
+    else:
+        band = "care"
+    return random.choice(_SCORE_SUMMARIES[band]).format(age=age, stype=stype)
+
+
 def random_diagnose(age: int, moisture: str = "보통", tone: str = "보통",
                     flush: bool = False, extra: list | None = None) -> dict:
-    """나이 + 사용자가 체크한 피부 상태로 진단 결과 생성. 점수는 랜덤 (데모용)."""
+    """나이 + 사용자가 체크한 피부 상태로 진단 결과 생성.
+    점수는 랜덤이고, 설명은 점수대에 맞춰 랜덤으로 뽑는다 (API/서버 호출 없음)."""
     score = random.randint(60, 98)  # 최소 60점 이상 보장
-    skin_type = _MOISTURE_TO_TYPE.get(moisture, random.choice(_SKIN_TYPES))
+    # 사용자가 고른 유수분 값이 곧 피부 타입 (건성/지성/복합성/민감성).
+    if moisture in _SKIN_TYPES:
+        skin_type = moisture
+    else:
+        skin_type = _MOISTURE_TO_TYPE.get(moisture, random.choice(_SKIN_TYPES))
 
     # 사용자가 체크한 항목을 고민으로 반영
     concerns = list(extra or [])
@@ -500,15 +457,10 @@ def random_diagnose(age: int, moisture: str = "보통", tone: str = "보통",
         ingredients.append(ing)
     ingredients = list(dict.fromkeys(ingredients))[:3]
 
-    summary = random.choice([
-        f"{age}세 평균보다 관리가 잘 되고 있어요! 지금 루틴 유지 추천 👍",
-        f"{age}세 기준 딱 평균 정도예요. 보습만 챙겨도 확 좋아질 거예요.",
-        f"요즘 컨디션이 살짝 지쳐 보여요. 수분 채우기부터 시작해봐요 💧",
-        f"기본기는 탄탄해요. 포인트 케어만 더하면 완벽해요!",
-    ])
+    summary = _summary_for_score(score, age, skin_type)
     return {
         "score": score,
-        "gain": random.randint(2, 16),  # 28일 피부 턴오버 동안 상승한 점수
+        "gain": random.randint(2, 16),  # 피부 턴오버 동안 상승한 점수
         "skin_type": skin_type,
         "concerns": concerns,
         "summary": summary,
@@ -540,10 +492,13 @@ def local_routine(event_label: str, days_left: int, diagnosis: dict) -> dict:
 
 
 CHAT_SYSTEM = (
-    "너는 'clozkin'의 AI 뷰티 가이드야. 뷰티에 처음 입문하는 남성 고객을 돕는 게 목표야. "
+    "너는 'clozkin'의 대표 캐릭터이자 AI 뷰티 가이드 'max'야. "
+    "너는 민트색 픽셀 슬라임 캐릭터 max로서 1인칭으로 직접 대화해. "
+    "뷰티에 처음 입문하는 남성 고객을 돕는 게 목표야. "
     "스킨케어를 세안처럼 '당연히 하는 행동'으로 느끼게 도와줘. "
     "전문 용어는 최소화하고, 초보자도 부담 없이 따라할 수 있게 아주 친근하고 짧게 답해. "
     "한 번에 너무 많은 걸 시키지 말고 딱 필요한 것만 골라줘. "
+    "가끔 '나 max가~' 처럼 너 자신을 max라고 부르며 캐릭터답게 귀엽고 친근하게 말해도 좋아. "
     "답변은 2~4문장 이내로 간결하게. 필요하면 이모지를 가볍게 써도 좋아."
 )
 
@@ -774,16 +729,23 @@ CUSTOM_CSS = """
 }
 .st-key-bottomnav > div { width: 100%; }
 .st-key-bottomnav [data-testid="stVerticalBlock"] { width: 100%; }
+/* 4칸을 항상 가로 한 줄로, 화면(베젤) 폭 안에 균등 분할 */
 .st-key-bottomnav [data-testid="stHorizontalBlock"] {
-  width: 100%; margin: 0 auto; gap: 6px; flex-direction: column;
+  width: 100%; margin: 0 auto; gap: 2px; flex-direction: row; flex-wrap: nowrap;
 }
 .st-key-bottomnav [data-testid="stHorizontalBlock"] [data-testid="column"] {
-  width: 100% !important; flex: 1 1 auto !important; min-width: 0 !important;
+  width: auto !important; flex: 1 1 0 !important; min-width: 0 !important;
 }
+/* 버튼 = 아이콘(위) + 작은 글자(아래) 세로 스택 */
 .st-key-bottomnav .stButton > button {
-  border: 0; background: transparent; color: var(--muted);
-  font-weight: 700; font-size: 13px; border-radius: 12px; box-shadow: none;
+  border: 0; background: transparent; color: var(--muted); box-shadow: none;
+  border-radius: 12px; padding: 6px 2px; width: 100%; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
 }
+.st-key-bottomnav .stButton > button p { margin: 0; line-height: 1.15; text-align: center; }
+.st-key-bottomnav .stButton > button p:first-child { font-size: 20px; }           /* 아이콘 */
+.st-key-bottomnav .stButton > button p:last-child {
+  font-size: 10.5px; font-weight: 700; letter-spacing: -0.2px; }                   /* 글자 */
 .st-key-bottomnav .stButton > button:hover { color: var(--text); border: 0; }
 .st-key-bottomnav .stButton > button[kind="primary"] {
   background: var(--accent-dim); color: var(--accent); box-shadow: none;
@@ -821,6 +783,8 @@ CUSTOM_CSS = """
   display: flex; align-items: center; gap: 10px; }
 .cl-chat-head__dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent);
   box-shadow: 0 0 12px var(--accent); flex-shrink: 0; }
+.cl-chat-head__ava { width: 30px; height: 30px; object-fit: contain; image-rendering: pixelated;
+  flex-shrink: 0; filter: drop-shadow(0 3px 8px rgba(67,211,176,0.4)); }
 .cl-chat-head__name { font-size: 14px; font-weight: 800; letter-spacing: -0.3px; }
 .cl-chat-head__sub { font-size: 11px; color: var(--muted); margin-left: auto;
   font-family: 'Space Grotesk', monospace; letter-spacing: 1px; }
@@ -954,12 +918,40 @@ L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
 .cl-agechip { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700;
   padding: 1px 7px; border-radius: 999px; color: var(--accent); background: var(--accent-dim);
   vertical-align: middle; }
+/* 피부 타입 배지 (랭킹) */
+.cl-typechip { display: inline-block; margin-left: 5px; font-size: 10px; font-weight: 700;
+  padding: 1px 7px; border-radius: 999px; color: #cfd6dd; background: rgba(255,255,255,0.08);
+  border: 1px solid var(--glass-brd); vertical-align: middle; }
+
+/* 주문서(팝오버) 트리거 버튼 - 랭킹 각 줄 오른쪽 */
+[class*="st-key-rankrow_"] { margin-bottom: 2px; }
+[class*="st-key-rankrow_"] .cl-rank { margin-bottom: 0; }
+[class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 6px; align-items: center; }
+[class*="st-key-rankrow_"] [data-testid="column"]:last-child { display: flex; justify-content: center; }
+[class*="st-key-rankrow_"] [data-testid="stPopover"] button {
+  border: 1px solid var(--glass-brd); background: var(--glass); color: var(--muted);
+  border-radius: 12px; padding: 8px 6px; min-height: 0; font-size: 16px; width: 100%;
+}
+[class*="st-key-rankrow_"] [data-testid="stPopover"] button:hover {
+  border-color: var(--accent); color: var(--accent); }
+/* 팝오버 안 3개월 사용 내역 한 줄 */
+.cl-hist { display: flex; gap: 10px; align-items: baseline; padding: 7px 2px;
+  border-bottom: 1px solid var(--glass-brd); font-size: 13px; }
+.cl-hist__date { font-family: 'Space Grotesk', monospace; font-size: 11px; color: var(--accent);
+  flex-shrink: 0; min-width: 78px; }
+.cl-hist__name { color: var(--text); }
 
 /* ---- 전국 피부 지도 (귀여운 슬라임 마커 + 숫자) ---- */
-.cl-map { position: relative; width: 100%; aspect-ratio: 3 / 4; max-height: 440px;
+.cl-map { position: relative; width: 100%; aspect-ratio: 1020 / 810; max-height: 460px;
   border-radius: 24px; overflow: hidden; border: 1px solid var(--glass-brd);
   margin: 4px 0 6px;
-  background:
+  background-color: #0c131a;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%; }
+/* 지도 이미지가 없을 때 쓰는 은은한 그라디언트 폴백 */
+.cl-map--nomap {
+  background-image:
     radial-gradient(140px 140px at 38% 24%, rgba(67, 211, 176, 0.20), transparent 70%),
     radial-gradient(180px 180px at 66% 66%, rgba(94, 234, 212, 0.14), transparent 70%),
     radial-gradient(120px 120px at 30% 88%, rgba(67, 211, 176, 0.12), transparent 70%),
@@ -1041,6 +1033,36 @@ L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
   .cl-map__label { font-size: 10px; }
   .cl-splash__max { width: 104px; }
   .cl-splash__msg { font-size: 14px; }
+  /* 랭킹 줄 + 닉네임/타입 칩 - 좁은 화면에서 잘리지 않게 */
+  .cl-rank__name { font-size: 13px; }
+  .cl-rank__product { font-size: 11.5px; }
+  .cl-rank__num { width: 20px; }
+  .cl-agechip, .cl-typechip { font-size: 9px; padding: 1px 6px; margin-left: 4px; }
+  /* 주문서 팝오버 열 - 간격/버튼 축소 */
+  [class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 3px; }
+  [class*="st-key-rankrow_"] [data-testid="stPopover"] button { font-size: 15px; padding: 7px 4px; }
+  .cl-hist__date { min-width: 66px; font-size: 10.5px; }
+  .cl-hist { font-size: 12px; }
+  /* 개선 상승폭 랭킹 / 많이 쓰는 랭킹 바 텍스트 */
+  .cl-prank__cat { font-size: 9.5px; }
+  .cl-prank__meta { font-size: 11px; }
+  /* 챗봇 헤더 아바타 */
+  .cl-chat-head__ava { width: 26px; height: 26px; }
+  .cl-chat-head { padding: 13px 15px; }
+  .cl-msg { font-size: 12.5px; max-width: 88%; }
+  /* 하단 내비게이션 - 아이콘/글자 축소로 4칸이 확실히 한 줄에 */
+  .st-key-bottomnav { padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)); }
+  .st-key-bottomnav [data-testid="stHorizontalBlock"] { gap: 0px; }
+  .st-key-bottomnav .stButton > button { padding: 5px 1px; }
+  .st-key-bottomnav .stButton > button p:first-child { font-size: 18px; }
+  .st-key-bottomnav .stButton > button p:last-child { font-size: 9.5px; }
+}
+
+/* 아주 좁은 화면(구형 폰) 대응 - 하단 내비 글자만 더 축소 */
+@media (max-width: 360px) {
+  .st-key-bottomnav .stButton > button p:first-child { font-size: 17px; }
+  .st-key-bottomnav .stButton > button p:last-child { font-size: 9px; letter-spacing: -0.4px; }
+  .cl-agechip, .cl-typechip { font-size: 8.5px; padding: 1px 5px; }
 }
 
 /* 폰 화면처럼 보이는 민트색 베젤 - .stApp 자체는 손대지 않고(스크롤/레이아웃 안전),
@@ -1082,7 +1104,7 @@ def consent_dialog() -> None:
     if c1.button("동의", type="primary", use_container_width=True):
         st.session_state.logged_in = True
         st.session_state.consent = True
-        st.session_state.login_loading = True  # 로그인 스플래시(3초) 트리거
+        st.session_state.login_loading = True  # 로그인 스플래시(5초) 트리거
         st.session_state.pop("pending_login", None)
         st.rerun()
     if c2.button("비동의", use_container_width=True):
@@ -1182,6 +1204,40 @@ def render_header() -> None:
                       use_container_width=True)
 
 
+# 얼굴 가이드 얼굴형 path (viewBox 0 0 300 420) - 카메라 오버레이 마스크에 재사용
+_FACE_PATH = (
+    "M150,46 L196,50 L226,78 L238,118 L234,148 L252,152 L266,172 L250,192 L232,196 "
+    "L224,235 L208,275 L186,315 L163,348 L150,358 L137,348 L114,315 L92,275 L76,235 "
+    "L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z"
+)
+
+
+def _inject_camera_overlay() -> None:
+    """카메라 프리뷰에서 얼굴 가이드 '바깥'을 블러 처리하고, 블러 영역에 max를 배치한다.
+    mask(rect - face, even-odd)로 얼굴 안쪽은 선명, 바깥쪽만 backdrop-filter 블러가 걸린다."""
+    # 얼굴 바깥만 불투명(white)한 마스크 SVG. '#' 은 data URI에서 문제되므로 색상명 사용.
+    mask_svg = (
+        "data:image/svg+xml;utf8,"
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 420'>"
+        "<path fill='white' fill-rule='evenodd' d='M0,0H300V420H0Z " + _FACE_PATH + "'/></svg>"
+    )
+    max_uri = slime_data_uri(200)
+    max_bg = (f'background: url("{max_uri}") no-repeat center bottom 5% / 58px;'
+              if max_uri else "")
+    st.markdown(
+        "<style>"
+        '.stApp [data-testid="stCameraInput"] div:has(> video)::before {'
+        'content:""; position:absolute; inset:0; pointer-events:none; z-index:2;'
+        "-webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);"
+        f'-webkit-mask: url("{mask_svg}") center / 100% 100% no-repeat;'
+        f'mask: url("{mask_svg}") center / 100% 100% no-repeat;'
+        f"{max_bg}"
+        "}"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_age_diagnosis() -> None:
     """나이 + 피부 상태 체크 후 촬영하면 (랜덤) 점수를 내고 랭킹에 반영한다."""
     st.markdown('<div class="cl-sec">DIAGNOSIS</div>', unsafe_allow_html=True)
@@ -1201,16 +1257,18 @@ def render_age_diagnosis() -> None:
         st.session_state.show_camera = True
         st.session_state.pop("last_diagnosis", None)  # 새 진단 시작 - 이전 결과 초기화
 
-    # 진단 버튼을 누르면 카메라가 뜨고, 촬영한 이미지로 로컬 CNN 모델이 결과를 만든다.
+    # 진단 버튼을 누르면 카메라가 뜨고, 촬영한 사진으로 결과를 만든다.
     if st.session_state.get("show_camera"):
         st.caption("📸 얼굴이 잘 보이도록 **정면**에서 촬영해주세요. "
                    "매번 최대한 **비슷한 공간(조명·배경)**에서 찍으면 피부 변화를 더 정확하게 볼 수 있어요.")
-        st.caption("👤 화면의 점선 원 안에 얼굴을 꽉 차게 맞춰주세요.")
+        st.caption("👤 화면의 점선 가이드 안에 얼굴을 꽉 차게 맞춰주세요. (가이드 밖은 흐리게 처리돼요)")
+        _inject_camera_overlay()
         shot = st.camera_input("피부 촬영", label_visibility="collapsed")
         if shot is not None:
-            with st.spinner("AI가 피부를 분석하는 중이에요..."):
-                image_bytes = shot.getvalue() if hasattr(shot, "getvalue") else shot
-                result = diagnose_skin(image_bytes)
+            with st.spinner("max가 피부를 분석하는 중이에요... 🫧"):
+                time.sleep(1.2)  # 분석하는 느낌을 주는 잠깐의 대기
+                # 서버/AI 호출 없이, 입력값 기반으로 점수대에 맞는 결과를 생성한다.
+                result = random_diagnose(int(age), moisture, tone, flush, extra)
             st.session_state.last_diagnosis = result
             # 진단 기록을 사이트 전체에 누적 저장 (랭킹에 반영)
             rec_id = time.time_ns()
@@ -1219,8 +1277,9 @@ def render_age_diagnosis() -> None:
                 "id": rec_id,
                 "name": (st.session_state.get("user_name") or "").strip() or "익명",
                 "age_group": f"{(int(age) // 10) * 10}대",
+                "skin_type": result.get("skin_type", "-"),
                 "score": result["score"],
-                "gain": max(2, min(16, 100 - result["score"])),
+                "gain": result.get("gain", max(2, min(16, 100 - result["score"]))),
                 "product": recs[0]["name"] if recs else "-",
             })
             st.session_state.my_record_id = rec_id
@@ -1261,11 +1320,12 @@ def render_skin_map() -> None:
     st.caption("지역별 피부 우수자 수예요. 슬라임이 클수록 피부 좋은 남자가 많아요 🫧")
 
     slime = slime_data_uri()
+    map_uri = map_data_uri()
     mx = max(r["count"] for r in MOCK_REGIONS)
     ranked = sorted(MOCK_REGIONS, key=lambda x: x["count"], reverse=True)
     pins = ""
     for i, r in enumerate(ranked):
-        w = 34 + round(r["count"] / mx * 30)  # 34~64px
+        w = 30 + round(r["count"] / mx * 26)  # 30~56px (지도 위라 살짝 작게)
         top = " cl-map__pin--top" if i == 0 else ""
         icon = (f'<img class="cl-map__slime" src="{slime}" style="width:{w}px">'
                 if slime else
@@ -1276,23 +1336,45 @@ def render_skin_map() -> None:
             f'{icon}'
             f'<div class="cl-map__label">{r["name"]}</div></div>'
         )
-    st.markdown(f'<div class="cl-map">{pins}</div>', unsafe_allow_html=True)
+    # 지도 이미지가 있으면 배경으로 깔고, 없으면 그라디언트 폴백(--nomap)을 쓴다.
+    if map_uri:
+        style = f' style="background-image:url({map_uri})"'
+        cls = "cl-map"
+    else:
+        style = ""
+        cls = "cl-map cl-map--nomap"
+    st.markdown(f'<div class="{cls}"{style}>{pins}</div>', unsafe_allow_html=True)
 
 
-def _person_row(rank: int, entry: dict, value_html: str) -> None:
-    """랭킹 한 줄 렌더. value_html 자리에 점수 또는 상승폭을 넣는다."""
-    st.markdown(
+def _person_row(rank: int, entry: dict, value_html: str, key_prefix: str = "") -> None:
+    """랭킹 한 줄 렌더. value_html 자리에 점수 또는 상승폭을 넣는다.
+    오른쪽에 '주문서' 아이콘(팝오버)을 두어 최근 3개월 사용 화장품을 보여준다."""
+    stype = entry.get("skin_type")
+    type_chip = f'<span class="cl-typechip">{stype}</span>' if stype else ""
+    row_html = (
         f'<div class="cl-rank {"is-me" if entry.get("is_me") else ""}">'
         f'<div class="cl-rank__num">{rank}</div>'
         f'<div class="cl-rank__body">'
         f'<div class="cl-rank__name">{entry["name"]}'
-        f'<span class="cl-agechip">{entry.get("age_group", "-")}</span></div>'
+        f'<span class="cl-agechip">{entry.get("age_group", "-")}</span>'
+        f'{type_chip}</div>'
         f'<div class="cl-rank__product">{entry["product"]}</div></div>'
         f'{value_html}'
         f'{buy_buttons(entry["product"])}'
-        f'</div>',
-        unsafe_allow_html=True,
+        f'</div>'
     )
+    with st.container(key=f"rankrow_{key_prefix}_{rank}"):
+        col_card, col_more = st.columns([7, 1])
+        col_card.markdown(row_html, unsafe_allow_html=True)
+        with col_more.popover("🧾", help="최근 3개월 사용 화장품"):
+            st.markdown(f"**{entry['name']}** 님의 최근 3개월 사용 화장품 🧾")
+            st.caption("근 3개월간 실제로 구매·사용한 제품 내역이에요.")
+            for h in person_history(entry["name"]):
+                st.markdown(
+                    f'<div class="cl-hist"><span class="cl-hist__date">{h["date"]}</span>'
+                    f'<span class="cl-hist__name">{h["product"]}</span></div>',
+                    unsafe_allow_html=True,
+                )
 
 
 def render_ranking() -> None:
@@ -1308,6 +1390,7 @@ def render_ranking() -> None:
         board.append({
             "name": r.get("name", "익명"),
             "age_group": r.get("age_group", "-"),
+            "skin_type": r.get("skin_type"),
             "score": int(r.get("score", 0)),
             "gain": int(r.get("gain", 0)),
             "product": r.get("product", "-"),
@@ -1332,7 +1415,7 @@ def render_ranking() -> None:
 
     view = [e for e in board if _in_group(e)]
 
-    tab_score, tab_gain = st.tabs(["🏆 피부 점수 순위", "📈 28일 상승 순위"])
+    tab_score, tab_gain = st.tabs(["🏆 피부 점수 순위", "📈 턴오버 상승 순위"])
 
     with tab_score:
         st.caption("현재 피부 점수가 높은 순이에요.")
@@ -1343,7 +1426,8 @@ def render_ranking() -> None:
         visible_count = len(score_sorted) if show_all_score else 10
         for rank, entry in enumerate(score_sorted[:visible_count], start=1):
             _person_row(rank, entry,
-                        f'<div class="cl-rank__score">{entry["score"]}</div>')
+                        f'<div class="cl-rank__score">{entry["score"]}</div>',
+                        key_prefix="score")
         if not show_all_score and len(score_sorted) > 10:
             if st.button("더보기", key="btn_rank_score_more", use_container_width=True):
                 st.session_state.rank_show_all_score = True
@@ -1356,7 +1440,8 @@ def render_ranking() -> None:
         for rank, entry in enumerate(
                 sorted(view, key=lambda x: x.get("gain", 0), reverse=True), start=1):
             _person_row(rank, entry,
-                        f'<div class="cl-rank__score cl-rank__gain">▲{entry.get("gain", 0)}</div>')
+                        f'<div class="cl-rank__score cl-rank__gain">▲{entry.get("gain", 0)}</div>',
+                        key_prefix="gain")
 
     # --- 많이 쓰는 화장품 랭킹 ---
     st.markdown('<div class="cl-sec">MOST USED</div>', unsafe_allow_html=True)
@@ -1375,6 +1460,28 @@ def render_ranking() -> None:
             f'<span class="cl-prank__cat">{p["category"]}</span></div>'
             f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
             f'<div class="cl-prank__meta">{p["users"]:,}명 사용</div></div>'
+            f'{buy_buttons(p["name"])}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # --- 개선 상승폭이 큰 사람들이 많이 쓰는 제품 ---
+    st.markdown('<div class="cl-sec">TOP IMPROVERS PICK</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">개선 상승폭 큰 사람들의 픽</div>', unsafe_allow_html=True)
+    st.caption("피부 점수가 가장 많이 오른 사람들이 즐겨 쓰는 아이템이에요. 🚀")
+
+    improvers = sorted(MOCK_IMPROVER_PRODUCTS, key=lambda x: x["avg_gain"], reverse=True)
+    top_gain = improvers[0]["avg_gain"]
+    for rank, p in enumerate(improvers, start=1):
+        pct = round(p["avg_gain"] / top_gain * 100)
+        st.markdown(
+            f'<div class="cl-prank">'
+            f'<div class="cl-rank__num">{rank}</div>'
+            f'<div class="cl-prank__body">'
+            f'<div class="cl-prank__top"><span class="cl-prank__name">{p["name"]}</span>'
+            f'<span class="cl-prank__cat">{p["category"]}</span></div>'
+            f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
+            f'<div class="cl-prank__meta">사용자 평균 <b style="color:var(--accent)">▲{p["avg_gain"]}점</b> 상승</div></div>'
             f'{buy_buttons(p["name"])}'
             f'</div>',
             unsafe_allow_html=True,
@@ -1499,13 +1606,15 @@ def set_nav(screen: str) -> None:
 
 
 def render_bottom_nav(active: str) -> None:
-    """하단 고정 탭 내비게이션 (홈 / 랭킹 / 진단)."""
+    """하단 고정 탭 내비게이션 (홈 / 랭킹 / 진단 / 구매).
+    아이콘 위 + 작은 글자 아래로 쌓아, 웹·모바일 모두 화면 폭 안에 4칸이 들어가게 한다."""
     items = [("home", "🏠", "홈"), ("ranking", "🏆", "랭킹"),
-             ("diagnose", "✨", "진단"), ("purchases", "🛍", "구매")]
+             ("diagnose", "📷", "진단"), ("purchases", "🛍️", "구매")]
     with st.container(key="bottomnav"):
         cols = st.columns(len(items))
         for col, (key, icon, label) in zip(cols, items):
-            col.button(f"{icon} {label}", key=f"nav_{key}", on_click=set_nav,
+            # 라벨을 "아이콘\n\n글자"로 넘겨 버튼 안에서 세로로 쌓이게 한다.
+            col.button(f"{icon}\n\n{label}", key=f"nav_{key}", on_click=set_nav,
                        args=(key,), use_container_width=True,
                        type="primary" if active == key else "secondary")
 
@@ -1516,7 +1625,77 @@ QUICK_QUESTIONS = [
     "지성 피부엔 뭐부터?",
     "여드름 자국 없애는 법",
     "면접 전날 피부 관리",
+    "자녀 결혼식 피부 관리",
 ]
+
+# max가 특정 질문에 정해진 대로 답하는 스크립트 답변 (키워드가 모두 포함되면 매칭)
+SCRIPTED_ANSWERS = [
+    {
+        "keysets": [["토너", "세럼", "순서"], ["토너", "세럼", "먼저"]],
+        "answer": (
+            "순서는 세안 → 토너 → 세럼 → 크림이에요.\n"
+            "토너는 피부결 정리, 세럼은 피부 고민 집중 케어예요.\n"
+            "아무것도 모르겠으면 '토너 다음 세럼'만 기억하면 돼요! 😉\n\n"
+            "🛍️ 추천 제품\n"
+            "• 라로슈포제 에빠끌라 토너\n"
+            "• 파티온 노스카나인 트러블 세럼"
+        ),
+    },
+    {
+        "keysets": [["지성", "뭐부터"], ["지성", "먼저"], ["지성", "순서"], ["지성", "무엇부터"]],
+        "answer": (
+            "지성 피부는 가볍고 산뜻한 제품부터 바르면 돼요.\n"
+            "보통 토너 → 세럼 → 가벼운 수분크림 순서가 잘 맞아요.\n"
+            "번들거려도 가벼운 보습은 꼭 해주는 게 좋아요! 💧\n\n"
+            "🛍️ 추천 제품\n"
+            "• 라로슈포제 에빠끌라 토너\n"
+            "• 에스트라 에이시카365 수분 진정 크림"
+        ),
+    },
+    {
+        "keysets": [["여드름", "자국"], ["여드름자국"], ["여드름", "흉터"]],
+        "answer": (
+            "여드름 자국은 진정 관리 + 자외선 차단 + 꾸준함이 중요해요.\n"
+            "붉은 자국은 진정, 갈색 자국은 미백 기능성 세럼이 도움 돼요.\n"
+            "손으로 만지거나 짜면 더 오래가니 최대한 안 건드리는 게 좋아요!\n\n"
+            "🛍️ 추천 제품\n"
+            "• 파티온 노스카나인 트러블 세럼\n"
+            "• 닥터자르트 시카페어 토너"
+        ),
+    },
+    {
+        "keysets": [["면접"]],
+        "answer": (
+            "면접 전날은 새 제품 말고, 순하고 간단하게 관리하는 게 좋아요.\n"
+            "각질 제거, 압출, 강한 팩은 피하는 게 안전해요.\n"
+            "진정 토너 + 가벼운 보습크림 정도만 해도 깔끔해 보여요! ✨\n\n"
+            "🛍️ 추천 제품\n"
+            "• 닥터자르트 시카페어 토너\n"
+            "• 에스트라 에이시카365 수분 진정 크림"
+        ),
+    },
+    {
+        "keysets": [["결혼식"], ["상견례"], ["중요한날"], ["중요한", "날"]],
+        "answer": (
+            "중요한 날 전에는 '좋아지게' 하기보다 '뒤집히지 않게' 관리하는 게 핵심이에요.\n"
+            "1~2주 전부터 세안, 보습, 선크림만 꾸준히 해도 충분히 깔끔해 보여요.\n"
+            "당일엔 번들거림 적은 보습제와 선크림만 써도 인상이 정돈돼 보여요!\n\n"
+            "🛍️ 추천 제품\n"
+            "• 닥터자르트 시카페어 토너\n"
+            "• 에스트라 에이시카365 수분 진정 크림"
+        ),
+    },
+]
+
+
+def scripted_reply(text: str) -> str | None:
+    """사용자 질문이 정해진 스크립트 질문과 맞으면 max의 고정 답변을 반환, 아니면 None."""
+    norm = re.sub(r"[\s·,.?!]", "", text)
+    for item in SCRIPTED_ANSWERS:
+        for keyset in item["keysets"]:
+            if all(re.sub(r"[\s·,.?!]", "", k) in norm for k in keyset):
+                return item["answer"]
+    return None
 
 
 def toggle_chat() -> None:
@@ -1534,10 +1713,18 @@ def _push_and_reply(client: anthropic.Anthropic | None, text: str) -> None:
     if not text:
         return
     st.session_state.chat_messages.append({"role": "user", "content": text})
+
+    # 1) 정해진 스크립트 질문이면 max가 고정 답변 (API 없이도 동작)
+    scripted = scripted_reply(text)
+    if scripted is not None:
+        st.session_state.chat_messages.append({"role": "assistant", "content": scripted})
+        return
+
     if client is None:
         st.session_state.chat_messages.append({
             "role": "assistant",
-            "content": "지금은 AI 연결이 안 돼요. (ANTHROPIC_API_KEY 설정을 확인해주세요)"})
+            "content": "앗, 지금은 max가 잠깐 쉬는 중이에요 🫧 "
+                       "위의 빠른 질문 버튼을 눌러보면 바로 답해드릴 수 있어요!"})
         return
     try:
         reply = chat_reply(client, st.session_state.chat_messages,
@@ -1554,8 +1741,8 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = [
             {"role": "assistant",
-             "content": "안녕하세요! 뷰티 입문 도와드리는 clozkin 가이드예요 👋 "
-                        "스킨케어 뭐든 편하게 물어보세요."}
+             "content": "안녕하세요! 저는 clozkin 대표 캐릭터 max예요 🫧 "
+                        "뷰티 입문, 저 max한테 뭐든 편하게 물어보세요!"}
         ]
 
     # 칩/폼으로 예약된 메시지를 버블 렌더 전에 처리한다.
@@ -1575,11 +1762,14 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
                     f'{html.escape(m["content"]).replace(chr(10), "<br>")}</div>'
                     for m in st.session_state.chat_messages
                 )
+                head_uri = slime_data_uri(72)
+                avatar = (f'<img class="cl-chat-head__ava" src="{head_uri}" alt="max">'
+                          if head_uri else '<span class="cl-chat-head__dot"></span>')
                 st.markdown(
                     '<div class="cl-chat-panel">'
-                    '<div class="cl-chat-head"><span class="cl-chat-head__dot"></span>'
-                    '<span class="cl-chat-head__name">clozkin 가이드</span>'
-                    '<span class="cl-chat-head__sub">AI</span></div>'
+                    f'<div class="cl-chat-head">{avatar}'
+                    '<span class="cl-chat-head__name">max</span>'
+                    '<span class="cl-chat-head__sub">clozkin</span></div>'
                     f'<div class="cl-chat-body">{bubbles}</div>'
                     '</div>',
                     unsafe_allow_html=True,
@@ -1636,7 +1826,7 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
                     unsafe_allow_html=True,
                 )
             st.button("✕" if chat_open else ("" if slime_uri else "💬"), key="btn_chat_fab",
-                      on_click=toggle_chat, help="AI 가이드에게 물어보기")
+                      on_click=toggle_chat, help="max에게 물어보기")
 
 
 # ---------------------------------------------------------------------------
@@ -1650,10 +1840,10 @@ def main() -> None:
     api_key = get_api_key()
     client = get_client(api_key) if api_key else None
 
-    # 앱 최초 로딩 시 3초 스플래시 (max 캐릭터 둥둥 + 픽셀 버블)
+    # 앱 최초 로딩 시 5초 스플래시 (max 캐릭터 둥둥 + 픽셀 버블)
     if not st.session_state.get("splashed"):
         render_max_loading("clozkin 불러오는 중...")
-        time.sleep(3)
+        time.sleep(5)
         st.session_state.splashed = True
         st.rerun()
 
@@ -1662,10 +1852,10 @@ def main() -> None:
         render_login()
         return
 
-    # 로그인 직후 3초 스플래시
+    # 로그인 직후 5초 스플래시
     if st.session_state.get("login_loading"):
         render_max_loading("로그인 중...")
-        time.sleep(3)
+        time.sleep(5)
         st.session_state.login_loading = False
         st.rerun()
 
