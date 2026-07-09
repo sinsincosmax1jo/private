@@ -926,6 +926,9 @@ CUSTOM_CSS = """
 }
 .stTextInput input:focus, .stNumberInput input:focus { border-color: var(--accent); box-shadow: none; }
 
+/* 카메라 프리뷰 + 촬영된 사진 모두 거울(좌우반전) 모드로 - 셀피처럼 자연스럽게 */
+.stApp [data-testid="stCameraInput"] video,
+.stApp [data-testid="stCameraInput"] img { transform: scaleX(-1); }
 /* 얼굴 가이드 - 카메라 프리뷰 중앙에 귀가 있는 사람 얼굴 형태의 점선 오버레이 */
 .stApp [data-testid="stCameraInput"] div:has(> video) { position: relative; }
 .stApp [data-testid="stCameraInput"] div:has(> video)::after {
