@@ -722,17 +722,24 @@ CUSTOM_CSS = """
 .cl-topbrand { font-size: 18px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.1; }
 .cl-topbrand span { display: block; font-family: 'Space Grotesk', monospace; font-size: 8.5px;
   letter-spacing: 1.5px; color: var(--muted); font-weight: 600; margin-top: 3px; }
-/* 로고 = 홈 이동 (실제 버튼이라 새로고침 없이 이동 -> 로그인 세션이 유지된다) */
-.st-key-logohome { line-height: 0; }
-.st-key-logohome .stButton > button {
-  width: 176px; height: 176px; padding: 0; border: 0; box-shadow: none;
-  background-color: transparent; background-repeat: no-repeat; background-position: left center;
-  background-size: contain; color: transparent; font-size: 0;
+/* 로고 = 홈 이동 (실제 버튼이라 새로고침 없이 이동 -> 로그인 세션이 유지된다)
+   이미지는 눈에 보이는 <img>로 그리고, 그 위에 투명 버튼을 겹쳐 클릭만 받는다
+   (버튼 자체에 배경이미지를 넣으면 streamlit 기본 버튼 크기에 밀려 깨지는 문제가 있었음) */
+.st-key-logohome { position: relative; width: 176px; height: 176px; line-height: 0; }
+.st-key-logohome .cl-logohome-visual {
+  position: absolute; inset: 0; z-index: 1; display: flex; align-items: center;
+  justify-content: flex-start; pointer-events: none;
   filter: drop-shadow(0 6px 18px rgba(67, 211, 176, 0.28)); transition: transform 0.2s ease;
 }
-.st-key-logohome .stButton > button:hover {
-  background-color: transparent; border: 0; box-shadow: none; transform: scale(1.05);
+.st-key-logohome .cl-logohome-visual img { width: 100%; height: 100%; object-fit: contain; object-position: left center; }
+.st-key-logohome .cl-logohome-visual--text { font-size: 19px; font-weight: 800; color: var(--text); }
+.st-key-logohome:hover .cl-logohome-visual { transform: scale(1.05); }
+.st-key-logohome .stButton { position: absolute; inset: 0; z-index: 2; margin: 0; }
+.st-key-logohome .stButton > button {
+  width: 100%; height: 100%; padding: 0; border: 0; box-shadow: none;
+  background: transparent; color: transparent; font-size: 0; opacity: 0;
 }
+.st-key-logohome .stButton > button:hover { background: transparent; border: 0; box-shadow: none; }
 
 /* 쇼핑몰 배지 (구매내역) */
 .cl-site { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 8px;
@@ -856,12 +863,19 @@ def render_login() -> None:
         if st.session_state.get("consent") is False:
             st.warning("개인정보 활용에 동의해야 서비스를 이용할 수 있어요.")
 
-    if login or signup or guest:
+    if login:
+        # 기존 회원 로그인은 이미 동의한 것으로 간주하고 팝업 없이 바로 입장
+        st.session_state.user_name = (user_id or "").strip() or "게스트"
+        st.session_state.logged_in = True
+        st.session_state.consent = True
+        st.session_state.pop("pending_login", None)
+        st.rerun()
+    elif signup or guest:
         st.session_state.user_name = (user_id or "").strip() or "게스트"
         st.session_state.pending_login = True
         st.session_state.pop("consent", None)
 
-    # 로그인/회원가입/비회원 선택 시 개인정보 동의 팝업 표시
+    # 회원가입/비회원 선택 시에만 개인정보 동의 팝업 표시 (로그인은 팝업 없이 바로 입장)
     if st.session_state.get("pending_login"):
         consent_dialog()
 
@@ -879,20 +893,15 @@ def render_header() -> None:
             uri = logo_data_uri()
             if uri:
                 st.markdown(
-                    f"<style>.st-key-logohome .stButton > button "
-                    f"{{background-image: url('{uri}');}}</style>",
+                    f'<div class="cl-logohome-visual"><img src="{uri}" alt="clozkin"></div>',
                     unsafe_allow_html=True,
                 )
-                label = "​"  # 배경 이미지로 로고를 그리므로 글자는 안 보이게
             else:
                 st.markdown(
-                    "<style>.st-key-logohome .stButton > button "
-                    "{width: auto; height: auto; color: var(--text); font-size: 19px; "
-                    "font-weight: 800; padding: 8px 4px;}</style>",
+                    '<div class="cl-logohome-visual cl-logohome-visual--text">clozkin</div>',
                     unsafe_allow_html=True,
                 )
-                label = "clozkin"
-            st.button(label, key="btn_logo_home", on_click=set_nav, args=("home",),
+            st.button("clozkin 홈", key="btn_logo_home", on_click=set_nav, args=("home",),
                       help="홈으로")
     with top_r:
         with st.container(key="logout"):
