@@ -309,6 +309,22 @@ def match_hue_for_nickname(nickname: str) -> int:
     return _MATCH_HUE_PALETTE[seed % len(_MATCH_HUE_PALETTE)]
 
 
+def random_match_result(my_score: int) -> tuple[int, bool]:
+    """승/패를 무작위로 정하고, 그 결과와 맞아떨어지는 상대 점수를 만들어 반환한다.
+    (0점/100점처럼 반대 결과가 수학적으로 불가능한 극단값은 강제로 맞춰준다.)"""
+    if my_score <= 0:
+        i_win = False
+    elif my_score >= 100:
+        i_win = True
+    else:
+        i_win = random.random() < 0.5
+    opp_score = (
+        random.randint(0, my_score - 1) if i_win
+        else random.randint(my_score + 1, 100)
+    )
+    return opp_score, i_win
+
+
 @st.cache_data(show_spinner=False)
 def character_data_uri(size: int = 220) -> str | None:
     """매치 캐릭터 원본 이미지를 data URI로 반환.
@@ -1674,19 +1690,21 @@ def render_match_screen() -> None:
 
             if submitted:
                 target = (nickname_input or "").strip()
-                records = load_records()
-                found = next(
-                    (r for r in reversed(records) if r.get("nickname") == target),
-                    None,
-                )
-                if not target or found is None:
-                    st.error("해당 닉네임을 찾을 수 없어요. 정확히 입력했는지 확인해주세요.")
+                if not target:
+                    st.error("상대방 닉네임을 입력해주세요.")
                 elif not my_diag:
                     st.warning("먼저 피부 진단을 받아야 매치를 시작할 수 있어요.")
                     st.button("진단하러 가기", type="primary", use_container_width=True,
                               on_click=set_nav, args=("diagnose",), key="match_goto_diag")
                 else:
-                    st.session_state.match_opponent = found
+                    # 실제 기록을 찾지 않고, 어떤 닉네임을 넣어도 무작위로 승/패가
+                    # 정해지는 상대를 만든다 (점수는 그 결과에 맞게 자동 생성).
+                    my_score = int(my_diag.get("score", 0))
+                    opp_score, _ = random_match_result(my_score)
+                    st.session_state.match_opponent = {
+                        "nickname": target,
+                        "score": opp_score,
+                    }
                     st.session_state.match_stage = "fight"
                     st.rerun()
         return
