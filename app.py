@@ -740,13 +740,9 @@ def render_age_diagnosis() -> None:
     st.caption("나이와 피부 상태를 체크하고 촬영하면 내 피부 점수를 알려드려요.")
 
     age = st.number_input("나이", min_value=10, max_value=90, value=28, step=1)
-    moisture = st.select_slider(
-        "피부 유수분 (건조 ↔ 유분)",
-        options=["건성", "약간 건성", "보통", "약간 지성", "지성"], value="보통")
-    tone = st.select_slider(
-        "피부 밝기 (어두움 ↔ 밝음)",
-        options=["어두운 편", "보통", "밝은 편"], value="보통")
-    flush = st.checkbox("얼굴에 홍조(붉은기)가 있는 편이에요")
+    moisture = st.radio("피부 유수분", ["건성", "지성"], horizontal=True)
+    tone = st.radio("피부 밝기", ["어두운 편", "밝은 편"], horizontal=True)
+    flush = st.radio("홍조(붉은기)", ["없음", "있음"], horizontal=True) == "있음"
     extra = st.multiselect(
         "그 외 신경 쓰이는 부분 (복수 선택)",
         ["트러블", "모공", "칙칙함", "다크서클", "각질", "속건조"])
