@@ -444,19 +444,32 @@ CUSTOM_CSS = """
   --ink: #06231d;
 }
 
-html, body { background: #05070a; }
+html, body { background: #05070a; overflow-x: hidden; }
 .stApp {
   background:
     radial-gradient(1100px 560px at 50% -12%, rgba(67, 211, 176, 0.13), transparent 60%),
     radial-gradient(900px 500px at 110% 8%, rgba(94, 234, 212, 0.06), transparent 55%),
     linear-gradient(180deg, #0b0e13 0%, #070a0e 100%);
+  width: 100%;
   max-width: 430px;
-  margin: 0 auto;
   min-height: 100vh;
   box-sizing: border-box;
   border-radius: 44px;
   border: 3px solid var(--accent);
   box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.35), 0 0 30px 6px rgba(67, 211, 176, 0.45);
+  /* margin:auto 만으로는 스트림릿 내부 레이아웃(flex/absolute)과 충돌해
+     왼쪽으로 붙는 경우가 있어, 위치 계산이 항상 맞는 transform 중앙정렬로 고정한다 */
+  position: relative !important;
+  left: 50% !important;
+  transform: translateX(-50%);
+  margin: 0 !important;
+}
+/* 스트림릿 내부 스크롤 컨테이너가 자체 높이/overflow를 강제해 하단 콘텐츠가
+   잘리는 문제를 막기 위해, 스크롤/높이 제어를 우리 프레임(.stApp) 쪽으로 넘긴다 */
+div[data-testid="stAppViewContainer"], section[data-testid="stMain"] {
+  overflow: visible !important;
+  height: auto !important;
+  min-height: 0 !important;
 }
 .stApp, .stApp p, .stApp span, .stApp div, .stApp h1, .stApp h2, .stApp h3, .stApp label {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -470,7 +483,7 @@ html, body { background: #05070a; }
   font-family: 'Material Symbols Rounded' !important;
   word-break: normal; overflow-wrap: normal;
 }
-.block-container { max-width: 560px; padding-top: 2.2rem; padding-bottom: 7rem; }
+.block-container { max-width: 100%; padding-top: 2.2rem; padding-bottom: 9rem; }
 #MainMenu, header, footer { visibility: hidden; }
 
 /* ---- 브랜드 / 히어로 ---- */
