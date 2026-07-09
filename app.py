@@ -726,9 +726,10 @@ CUSTOM_CSS = """
    버튼(및 조상 wrapper)을 position:absolute로 빼면 streamlit이 마운트 시
    컨테이너의 실제 콘텐츠 높이를 0으로 측정해버려 레이아웃이 깨지므로,
    일반 흐름(normal flow) 그대로 두고 버튼 자체 크기만 !important로 강제한다. */
+.st-key-topbar [data-testid="stHorizontalBlock"] { align-items: center; }
 .st-key-logohome { line-height: 0; }
 .st-key-logohome .stButton button {
-  width: 176px !important; height: 176px !important; padding: 0 !important; border: 0 !important; box-shadow: none !important;
+  width: 56px !important; height: 56px !important; padding: 0 !important; border: 0 !important; box-shadow: none !important;
   background-color: transparent !important; background-repeat: no-repeat !important; background-position: left center !important;
   background-size: contain !important; color: transparent !important; font-size: 0 !important;
   filter: drop-shadow(0 6px 18px rgba(67, 211, 176, 0.28)); transition: transform 0.2s ease;
@@ -884,7 +885,8 @@ def section_title(title: str, tag: str) -> None:
 
 def render_header() -> None:
     """상단 브랜드 바(로고=홈 이동, 페이지 새로고침 없이 st.button으로 처리) + 로그아웃 (모든 화면 공통)."""
-    top_l, top_r = st.columns([3, 1])
+    top_bar = st.container(key="topbar")
+    top_l, top_r = top_bar.columns([3, 1])
     with top_l:
         with st.container(key="logohome"):
             uri = logo_data_uri()
