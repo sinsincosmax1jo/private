@@ -291,6 +291,52 @@ def map_data_uri(size: int = 720) -> str | None:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+# ---------------------------------------------------------------------------
+# 지목 매치 - 닉네임 기반 피부점수 대결
+# ---------------------------------------------------------------------------
+# 매치 캐릭터 원본 이미지. 사용자가 이 경로에 일러스트를 넣으면 그 이미지를 쓰고,
+# 없으면 이미 있는 슬라임 마스코트 이미지로 대체한다 (같은 그림, 색만 다르게 입힌다).
+CHARACTER_PATH = os.path.join(_BASE_DIR, "assets", "character.png")
+
+# 민트(#43d3b0) 테마와 어울리는 hue-rotate 각도 팔레트 (8종).
+# 닉네임 문자열을 해시해 이 중 하나를 결정적으로 골라 같은 닉네임은 항상 같은 색이 나오게 한다.
+_MATCH_HUE_PALETTE = [0, 45, 90, 135, 180, 220, 260, 300]
+
+
+def match_hue_for_nickname(nickname: str) -> int:
+    """닉네임을 해시해 _MATCH_HUE_PALETTE 중 하나를 결정적으로 배정."""
+    seed = sum(ord(c) for c in (nickname or "")) or 1
+    return _MATCH_HUE_PALETTE[seed % len(_MATCH_HUE_PALETTE)]
+
+
+@st.cache_data(show_spinner=False)
+def character_data_uri(size: int = 220) -> str | None:
+    """매치 캐릭터 원본 이미지를 data URI로 반환.
+    assets/character.png가 없으면 슬라임 이미지로 대체하고, 그마저 없으면 None."""
+    path = CHARACTER_PATH if os.path.exists(CHARACTER_PATH) else SLIME_PATH
+    try:
+        img = Image.open(path).convert("RGBA")
+    except (OSError, FileNotFoundError):
+        return None
+    img.thumbnail((size, size), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def match_character_html(css_class: str, hue: int | None, grayscale: bool = False) -> str:
+    """매치 화면의 캐릭터 이미지 HTML 한 개를 반환.
+    hue가 None이거나 grayscale=True면(상대 미정) 회색조로, 아니면 hue-rotate(deg)로 착색한다."""
+    if grayscale or hue is None:
+        filt = "grayscale(1) brightness(0.85) contrast(0.9)"
+    else:
+        filt = f"hue-rotate({hue}deg) saturate(1.4)"
+    uri = character_data_uri()
+    if uri:
+        return f'<img class="{css_class}" src="{uri}" style="filter:{filt}" alt="character">'
+    return f'<div class="{css_class} cl-match__emoji" style="filter:{filt}">🥷</div>'
+
+
 # 픽셀 버블 색상 팔레트 (민트 계열)
 _BUBBLE_COLORS = ["rgba(67,211,176,{a})", "rgba(94,234,212,{a})", "rgba(163,217,119,{a})"]
 
@@ -729,11 +775,13 @@ CUSTOM_CSS = """
 }
 .st-key-bottomnav > div { width: 100%; }
 .st-key-bottomnav [data-testid="stVerticalBlock"] { width: 100%; }
-/* 4칸을 항상 가로 한 줄로, 화면(베젤) 폭 안에 균등 분할 */
+/* 5칸을 항상 가로 한 줄로, 화면(베젤) 폭 안에 균등 분할.
+   Streamlit 1.59는 컬럼에 data-testid="stColumn"을 쓴다(구버전의 "column"이 아님) -
+   구 선택자로는 매칭이 안 돼 컬럼이 안 줄어들고 넘쳤던 문제를 같이 고쳤다. */
 .st-key-bottomnav [data-testid="stHorizontalBlock"] {
   width: 100%; margin: 0 auto; gap: 2px; flex-direction: row; flex-wrap: nowrap;
 }
-.st-key-bottomnav [data-testid="stHorizontalBlock"] [data-testid="column"] {
+.st-key-bottomnav [data-testid="stHorizontalBlock"] [data-testid="stColumn"] {
   width: auto !important; flex: 1 1 0 !important; min-width: 0 !important;
 }
 /* 버튼 = 아이콘(위) + 작은 글자(아래) 세로 스택 */
@@ -1006,8 +1054,61 @@ L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
   12% { opacity: 0.9; }
   100% { transform: translateY(-108vh) scale(1.25); opacity: 0; } }
 
+/* ---- 지목 매치 (격투 스타일 대결) ---- */
+.cl-match { text-align: center; padding: 8px 0 4px; }
+.cl-match__arena { position: relative; display: flex; align-items: center; justify-content: center;
+  gap: 10px; min-height: 168px; margin: 10px 0 16px; }
+.cl-match__char { width: 108px; height: 108px; object-fit: contain; image-rendering: pixelated; }
+.cl-match__emoji { width: 108px; height: 108px; display: flex; align-items: center;
+  justify-content: center; font-size: 62px; }
+.cl-match__char--left { animation: cl-match-shake-l 0.5s ease-in-out infinite; }
+.cl-match__char--right { animation: cl-match-shake-r 0.5s ease-in-out infinite; transform: scaleX(-1); }
+.cl-match__char--lose { opacity: 0.35; filter: grayscale(0.4) !important; animation: none !important; }
+@keyframes cl-match-shake-l { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(6px); } }
+@keyframes cl-match-shake-r {
+  0%, 100% { transform: translateX(0) scaleX(-1); } 50% { transform: translateX(-6px) scaleX(-1); } }
+.cl-match__vs { font-family: 'Space Grotesk', monospace; font-weight: 800; font-size: 20px;
+  color: var(--muted); flex-shrink: 0; }
+.cl-match__label { font-size: 12px; color: var(--muted); margin-top: 2px; font-weight: 600; }
+
+/* Ready!! / Fight!! 팝업 배너 - .cl-match__arena(position:relative) 안에 넣어서
+   그 캐릭터 영역 위에만 뜨게 한다 (뷰포트 전체 기준으로 띄우면 페이지 실제 높이와
+   안 맞아 닉네임 입력폼과 겹치는 문제가 있었다). */
+.cl-match__banner { position: absolute; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.cl-match__banner span { font-family: 'Space Grotesk', monospace; font-weight: 800;
+  font-size: 56px; letter-spacing: 2px; opacity: 0; transform: scale(0.4);
+  background: linear-gradient(115deg, var(--accent-2), var(--accent));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 30px rgba(67,211,176,0.55));
+  animation: cl-match-pop 0.5s cubic-bezier(.2,1.4,.4,1) 1 forwards; }
+@keyframes cl-match-pop {
+  0% { opacity: 0; transform: scale(0.3); }
+  60% { opacity: 1; transform: scale(1.18); }
+  100% { opacity: 1; transform: scale(1); } }
+
+/* 닉네임 입력 폼 - Ready!! 배너 뒤에 이어서 페이드인 */
+.st-key-match_nickform { opacity: 0; animation: cl-match-fadein 0.5s ease 1.9s 1 forwards; }
+@keyframes cl-match-fadein {
+  from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* 대결 결과 */
+.cl-match__score { font-family: 'Space Grotesk', monospace; font-size: 40px; font-weight: 800;
+  letter-spacing: -1px; margin: 4px 0 16px; }
+.cl-match__score .cl-match__win-num { color: var(--accent); }
+.cl-match__score .cl-match__lose-num { color: var(--muted); }
+.cl-match__winner-name { font-size: 21px; font-weight: 800; margin: 6px 0 2px; }
+.cl-match__badge { display: inline-block; background: linear-gradient(115deg, var(--accent-2), var(--accent));
+  color: var(--ink); font-weight: 800; font-size: 12.5px; letter-spacing: 1px; padding: 5px 16px;
+  border-radius: 999px; margin-top: 6px; box-shadow: 0 8px 24px rgba(67,211,176,0.35); }
+.cl-match__draw { font-size: 16px; font-weight: 700; margin: 18px 0 6px; color: var(--muted); }
+
 /* ---- 모바일 대응 ---- */
 @media (max-width: 480px) {
+  .cl-match__char, .cl-match__emoji { width: 84px; height: 84px; font-size: 50px; }
+  .cl-match__arena { min-height: 132px; gap: 6px; }
+  .cl-match__banner span { font-size: 42px; }
+  .cl-match__score { font-size: 32px; }
   .block-container { padding-left: 1rem; padding-right: 1rem; padding-top: 1.4rem; }
   .cl-logo { width: 120px; height: 120px; }
   .cl-hero__title { font-size: 30px; letter-spacing: -1px; margin: 18px 0 12px; }
@@ -1273,9 +1374,13 @@ def render_age_diagnosis() -> None:
             # 진단 기록을 사이트 전체에 누적 저장 (랭킹에 반영)
             rec_id = time.time_ns()
             recs = recommend_products(result)
+            nickname = (st.session_state.get("user_name") or "").strip() or "익명"
             save_record({
                 "id": rec_id,
-                "name": (st.session_state.get("user_name") or "").strip() or "익명",
+                "name": nickname,
+                # 지목 매치에서 마스킹 없이 정확히 검색하기 위한 별도 필드 (name과 같은 값을
+                # 저장하지만, 추후 name이 마스킹되더라도 매치 검색은 영향받지 않게 분리해둔다).
+                "nickname": nickname,
                 "age_group": f"{(int(age) // 10) * 10}대",
                 "skin_type": result.get("skin_type", "-"),
                 "score": result["score"],
@@ -1500,6 +1605,144 @@ def render_diagnosis_screen() -> None:
               use_container_width=True)
 
 
+def _match_arena_html(my_hue: int, opp_hue: int | None, opp_grayscale: bool = False,
+                       lose_side: str | None = None, banner_text: str | None = None) -> str:
+    """매치 화면의 캐릭터 2체(나/상대) + VS 마크업을 반환.
+    lose_side가 'left'/'right'면 그쪽 캐릭터를 패배 스타일(흐리게)로 렌더링한다.
+    banner_text가 있으면 (Ready!!/Fight!!) 이 캐릭터 영역 안에만 겹쳐서 띄운다 -
+    뷰포트 전체 기준으로 띄우면 실제 페이지 높이와 안 맞아 아래 폼과 겹치기 때문에
+    .cl-match__arena(position:relative) 내부에 절대위치로 넣는다."""
+    left_cls = "cl-match__char cl-match__char--left"
+    right_cls = "cl-match__char cl-match__char--right"
+    if lose_side == "left":
+        left_cls += " cl-match__char--lose"
+    elif lose_side == "right":
+        right_cls += " cl-match__char--lose"
+    banner_html = (
+        f'<div class="cl-match__banner"><span>{banner_text}</span></div>' if banner_text else ""
+    )
+    return (
+        '<div class="cl-match__arena">'
+        f'{match_character_html(left_cls, my_hue)}'
+        '<div class="cl-match__vs">VS</div>'
+        f'{match_character_html(right_cls, opp_hue, grayscale=opp_grayscale)}'
+        f'{banner_html}'
+        '</div>'
+    )
+
+
+def render_match_screen() -> None:
+    """지목 매치 - 닉네임으로 상대를 지목해 피부점수로 대결한다.
+    3단계: intro(대기+Ready!!) -> nickname(상대 지목) -> fight(Fight!!) -> result(승패)."""
+    render_header()
+    section_title("지목 매치", "MATCH")
+
+    stage = st.session_state.get("match_stage", "intro")
+    my_diag = st.session_state.get("last_diagnosis")
+    my_name = (st.session_state.get("user_name") or "").strip() or "익명"
+    my_hue = match_hue_for_nickname(my_name)
+    opponent = st.session_state.get("match_opponent")
+
+    if stage not in ("intro", "nickname"):
+        # st.container(key=...)는 같은 키로 다시 방문하지 않으면 이전 내용을 그대로
+        # 남겨두므로, fight/result 단계에서는 닉네임 입력 폼을 명시적으로 비워야 한다.
+        st.container(key="match_nickform").empty()
+
+    if stage in ("intro", "nickname"):
+        opp_hue = match_hue_for_nickname(opponent["nickname"]) if opponent else None
+        # Ready!! 배너는 최초 진입(intro) 시 한 번만 - 다음 렌더부터는 닉네임 입력 폼만 보인다.
+        banner = "Ready!!" if stage == "intro" else None
+        st.markdown(
+            f'<div class="cl-match">'
+            f'{_match_arena_html(my_hue, opp_hue, opp_grayscale=opponent is None, banner_text=banner)}'
+            f'<div class="cl-match__label">{my_name} VS '
+            f'{opponent["nickname"] if opponent else "???"}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        if stage == "intro":
+            st.session_state.match_stage = "nickname"
+
+        with st.container(key="match_nickform"):
+            with st.form(key="match_nickname_form"):
+                nickname_input = st.text_input(
+                    "상대방 닉네임을 입력하세요", placeholder="상대방 닉네임을 입력하세요",
+                    label_visibility="collapsed",
+                )
+                submitted = st.form_submit_button(
+                    "대결 신청", type="primary", use_container_width=True)
+
+            if submitted:
+                target = (nickname_input or "").strip()
+                records = load_records()
+                found = next(
+                    (r for r in reversed(records) if r.get("nickname") == target),
+                    None,
+                )
+                if not target or found is None:
+                    st.error("해당 닉네임을 찾을 수 없어요. 정확히 입력했는지 확인해주세요.")
+                elif not my_diag:
+                    st.warning("먼저 피부 진단을 받아야 매치를 시작할 수 있어요.")
+                    st.button("진단하러 가기", type="primary", use_container_width=True,
+                              on_click=set_nav, args=("diagnose",), key="match_goto_diag")
+                else:
+                    st.session_state.match_opponent = found
+                    st.session_state.match_stage = "fight"
+                    st.rerun()
+        return
+
+    if stage == "fight":
+        opp_hue = match_hue_for_nickname(opponent.get("nickname", "")) if opponent else None
+        st.markdown(
+            f'<div class="cl-match">'
+            f'{_match_arena_html(my_hue, opp_hue, banner_text="Fight!!")}</div>',
+            unsafe_allow_html=True,
+        )
+        time.sleep(0.9)
+        st.session_state.match_stage = "result"
+        st.rerun()
+        return
+
+    # stage == "result"
+    opponent = opponent or {}
+    my_score = int((my_diag or {}).get("score", 0))
+    opp_score = int(opponent.get("score", 0))
+    opp_name = opponent.get("nickname", "상대")
+    opp_hue = match_hue_for_nickname(opp_name)
+
+    if my_score == opp_score:
+        st.markdown(
+            f'<div class="cl-match">{_match_arena_html(my_hue, opp_hue)}'
+            f'<div class="cl-match__score">{my_score} VS {opp_score}</div>'
+            '<div class="cl-match__draw">무승부! 다시 대결해보세요</div></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        i_win = my_score > opp_score
+        winner_name = my_name if i_win else opp_name
+        lose_side = "right" if i_win else "left"
+        win_num, lose_num = (my_score, opp_score) if i_win else (opp_score, my_score)
+        score_html = (
+            f'<span class="cl-match__win-num">{win_num}</span> VS '
+            f'<span class="cl-match__lose-num">{lose_num}</span>'
+            if i_win else
+            f'<span class="cl-match__lose-num">{lose_num}</span> VS '
+            f'<span class="cl-match__win-num">{win_num}</span>'
+        )
+        st.markdown(
+            f'<div class="cl-match">{_match_arena_html(my_hue, opp_hue, lose_side=lose_side)}'
+            f'<div class="cl-match__score">{score_html}</div>'
+            f'<div class="cl-match__winner-name">🏆 {winner_name}</div>'
+            '<div class="cl-match__badge">WIN!</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    if st.button("다시 대결하기", type="primary", use_container_width=True, key="match_retry"):
+        st.session_state.match_stage = "intro"
+        st.session_state.pop("match_opponent", None)
+        st.rerun()
+
+
 def render_purchases_screen() -> None:
     render_header()
     section_title("구매 내역", "PURCHASES")
@@ -1606,10 +1849,11 @@ def set_nav(screen: str) -> None:
 
 
 def render_bottom_nav(active: str) -> None:
-    """하단 고정 탭 내비게이션 (홈 / 랭킹 / 진단 / 구매).
-    아이콘 위 + 작은 글자 아래로 쌓아, 웹·모바일 모두 화면 폭 안에 4칸이 들어가게 한다."""
+    """하단 고정 탭 내비게이션 (홈 / 랭킹 / 진단 / 매치 / 구매).
+    아이콘 위 + 작은 글자 아래로 쌓아, 웹·모바일 모두 화면 폭 안에 5칸이 들어가게 한다."""
     items = [("home", "🏠", "홈"), ("ranking", "🏆", "랭킹"),
-             ("diagnose", "📷", "진단"), ("purchases", "🛍️", "구매")]
+             ("diagnose", "📷", "진단"), ("match", "⚔️", "매치"),
+             ("purchases", "🛍️", "구매")]
     with st.container(key="bottomnav"):
         cols = st.columns(len(items))
         for col, (key, icon, label) in zip(cols, items):
@@ -1864,12 +2108,14 @@ def main() -> None:
         st.session_state.nav = st.query_params["nav"]
         del st.query_params["nav"]
 
-    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단 / 구매)
+    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단 / 매치 / 구매)
     nav = st.session_state.get("nav", "home")
     if nav == "ranking":
         render_ranking()
     elif nav == "diagnose":
         render_diagnosis_screen()
+    elif nav == "match":
+        render_match_screen()
     elif nav == "purchases":
         render_purchases_screen()
     else:
