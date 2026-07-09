@@ -224,22 +224,50 @@ def _text_from_response(response) -> str:
 # 피부 진단 (나이 입력 기반, 결과는 랜덤)
 # ---------------------------------------------------------------------------
 _SKIN_TYPES = ["건성", "지성", "복합성", "민감성"]
-_CONCERN_POOL = [
-    "붉은기·트러블", "번들거림(유분)", "피부톤 불균일", "칙칙함",
-    "속건조", "모공", "다크서클", "각질",
-]
 _INGREDIENT_POOL = [
     "히알루론산", "나이아신아마이드", "센텔라", "비타민C",
     "세라마이드", "판테놀", "어성초", "마데카소사이드",
 ]
 
+# 유수분 선택값 -> 피부 타입 매핑
+_MOISTURE_TO_TYPE = {
+    "건성": "건성", "약간 건성": "건성", "보통": "복합성",
+    "약간 지성": "지성", "지성": "지성",
+}
+# 고민 -> 추천 성분 매핑
+_CONCERN_TO_INGREDIENT = {
+    "홍조": "센텔라", "속건조": "세라마이드", "번들거림(유분)": "나이아신아마이드",
+    "칙칙함": "비타민C", "트러블": "어성초", "모공": "나이아신아마이드",
+    "다크서클": "카페인", "각질": "판테놀",
+}
 
-def random_diagnose(age: int) -> dict:
-    """나이만 입력받아 무작위 피부 진단 결과를 생성 (데모용)."""
+
+def random_diagnose(age: int, moisture: str = "보통", tone: str = "보통",
+                    flush: bool = False, extra: list | None = None) -> dict:
+    """나이 + 사용자가 체크한 피부 상태로 진단 결과 생성. 점수는 랜덤 (데모용)."""
     score = random.randint(61, 96)
-    skin_type = random.choice(_SKIN_TYPES)
-    concerns = random.sample(_CONCERN_POOL, k=random.randint(2, 3))
-    ingredients = random.sample(_INGREDIENT_POOL, k=random.randint(2, 3))
+    skin_type = _MOISTURE_TO_TYPE.get(moisture, random.choice(_SKIN_TYPES))
+
+    # 사용자가 체크한 항목을 고민으로 반영
+    concerns = list(extra or [])
+    if flush:
+        concerns.insert(0, "홍조")
+    if moisture in ("건성", "약간 건성"):
+        concerns.append("속건조")
+    if moisture in ("지성", "약간 지성"):
+        concerns.append("번들거림(유분)")
+    if tone == "어두운 편":
+        concerns.append("칙칙함")
+    concerns = list(dict.fromkeys(concerns))[:4] or ["전반적으로 안정적"]
+
+    # 고민 기반 추천 성분 (부족하면 랜덤으로 채움)
+    ingredients = [_CONCERN_TO_INGREDIENT[c] for c in concerns if c in _CONCERN_TO_INGREDIENT]
+    for ing in random.sample(_INGREDIENT_POOL, k=len(_INGREDIENT_POOL)):
+        if len(ingredients) >= 3:
+            break
+        ingredients.append(ing)
+    ingredients = list(dict.fromkeys(ingredients))[:3]
+
     summary = random.choice([
         f"{age}세 평균보다 관리가 잘 되고 있어요! 지금 루틴 유지 추천 👍",
         f"{age}세 기준 딱 평균 정도예요. 보습만 챙겨도 확 좋아질 거예요.",
@@ -706,27 +734,35 @@ def section_title(title: str, tag: str) -> None:
 
 
 def render_age_diagnosis() -> None:
-    """나이만 입력하면 랜덤 피부 진단 결과를 보여준다. 결과는 랭킹에 반영된다."""
+    """나이 + 피부 상태 체크 후 촬영하면 (랜덤) 점수를 내고 랭킹에 반영한다."""
     st.markdown('<div class="cl-sec">DIAGNOSIS</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">AI 피부 진단</div>', unsafe_allow_html=True)
-    st.caption("나이만 입력하면 30초 만에 내 피부 점수를 알려드려요.")
+    st.caption("나이와 피부 상태를 체크하고 촬영하면 내 피부 점수를 알려드려요.")
 
-    col_a, col_b = st.columns([1, 1.2])
-    with col_a:
-        age = st.number_input("나이", min_value=10, max_value=90, value=28, step=1,
-                              label_visibility="collapsed")
-    with col_b:
-        run = st.button("피부 진단받기", type="primary", use_container_width=True)
+    age = st.number_input("나이", min_value=10, max_value=90, value=28, step=1)
+    moisture = st.select_slider(
+        "피부 유수분 (건조 ↔ 유분)",
+        options=["건성", "약간 건성", "보통", "약간 지성", "지성"], value="보통")
+    tone = st.select_slider(
+        "피부 밝기 (어두움 ↔ 밝음)",
+        options=["어두운 편", "보통", "밝은 편"], value="보통")
+    flush = st.checkbox("얼굴에 홍조(붉은기)가 있는 편이에요")
+    extra = st.multiselect(
+        "그 외 신경 쓰이는 부분 (복수 선택)",
+        ["트러블", "모공", "칙칙함", "다크서클", "각질", "속건조"])
+
+    run = st.button("피부 진단받기", type="primary", use_container_width=True)
     if run:
         st.session_state.show_camera = True
         st.session_state.pop("last_diagnosis", None)  # 새 진단 시작 - 이전 결과 초기화
 
-    # 진단 버튼을 누르면 카메라가 뜨고, 촬영하면 랜덤 점수를 낸다.
+    # 진단 버튼을 누르면 카메라가 뜨고, 촬영하면 체크값 + 랜덤 점수로 결과를 낸다.
     if st.session_state.get("show_camera"):
         st.caption("📸 얼굴이 잘 보이도록 정면에서 촬영해주세요.")
         shot = st.camera_input("피부 촬영", label_visibility="collapsed")
         if shot is not None:
-            st.session_state.last_diagnosis = random_diagnose(int(age))
+            st.session_state.last_diagnosis = random_diagnose(
+                int(age), moisture, tone, flush, extra)
             st.session_state.show_camera = False
             st.rerun()
 
