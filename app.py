@@ -462,7 +462,7 @@ CUSTOM_CSS = """
   font-family: 'Material Symbols Rounded' !important;
   word-break: normal; overflow-wrap: normal;
 }
-.block-container { max-width: 560px; padding-top: 2.2rem; padding-bottom: 7rem; }
+.block-container { max-width: 430px; margin: 0 auto; padding-top: 2.2rem; padding-bottom: 7rem; }
 #MainMenu, header, footer { visibility: hidden; }
 
 /* ---- 브랜드 / 히어로 ---- */
@@ -596,12 +596,13 @@ CUSTOM_CSS = """
 
 /* ---- 하단 탭 내비게이션 ---- */
 .st-key-bottomnav {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 9998;
+  /* 본문(430px, 가운데 정렬) 폭에 맞춰 하단 탭바도 같은 폭으로 */
+  position: fixed; left: max(0px, calc(50% - 215px)); right: max(0px, calc(50% - 215px)); bottom: 0; z-index: 9998;
   background: rgba(10, 14, 19, 0.96); backdrop-filter: blur(16px);
   border-top: 1px solid var(--glass-brd);
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
 }
-.st-key-bottomnav [data-testid="stHorizontalBlock"] { max-width: 560px; margin: 0 auto; gap: 8px; }
+.st-key-bottomnav [data-testid="stHorizontalBlock"] { max-width: 430px; margin: 0 auto; gap: 8px; }
 .st-key-bottomnav .stButton > button {
   border: 0; background: transparent; color: var(--muted);
   font-weight: 700; font-size: 13px; border-radius: 12px; box-shadow: none;
@@ -613,9 +614,9 @@ CUSTOM_CSS = """
 
 /* ---- 플로팅 채팅봇 (우측 하단) ---- */
 .st-key-chatwidget {
-  /* 넓은 화면에선 본문(560px) 컬럼 오른쪽 가장자리에 맞춰 가운데쪽으로,
+  /* 넓은 화면에선 본문(430px) 컬럼 오른쪽 가장자리에 맞춰 가운데쪽으로,
      좁은 화면에선 화면 끝 16px 로 자동 조정 */
-  position: fixed; right: max(16px, calc(50% - 272px)); bottom: 88px; z-index: 9999;
+  position: fixed; right: max(16px, calc(50% - 199px)); bottom: 88px; z-index: 9999;
   width: auto; max-width: calc(100vw - 28px);
 }
 /* 열린 상태의 채팅 카드 - 불투명 배경으로 본문과 겹쳐 글자가 비치는 문제 방지 */
@@ -792,10 +793,13 @@ CUSTOM_CSS = """
   .st-key-chatcard { width: min(340px, calc(100vw - 24px)); }
 }
 
-/* 화면 테두리에 민트색 베젤 글로우 (모바일 폰 화면처럼 둥근 테두리) */
+/* 폰 화면처럼 보이는 민트색 베젤 - .stApp 자체는 손대지 않고(스크롤/레이아웃 안전),
+   본문(430px, 가운데 정렬)과 같은 폭·위치로 계산한 장식용 오버레이만 그린다.
+   좁은(모바일) 화면에서는 자동으로 화면 전체 폭 베젤이 된다. */
 .stApp::after {
   content: "";
-  position: fixed; inset: 0;
+  position: fixed; top: 0; bottom: 0;
+  left: max(0px, calc(50% - 215px)); right: max(0px, calc(50% - 215px));
   border: 4px solid var(--accent);
   border-radius: 40px;
   box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.35) inset, 0 0 26px 4px rgba(67, 211, 176, 0.45);
