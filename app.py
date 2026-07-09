@@ -801,7 +801,7 @@ CUSTOM_CSS = """
 /* 토글 버튼(FAB) - 열림/닫힘 공통 */
 .st-key-chat_fab { display: flex; justify-content: flex-end; }
 .st-key-chat_fab .stButton > button {
-  width: 58px; height: 58px; border-radius: 50%; padding: 0;
+  width: 58px; height: 58px; border-radius: 16px; padding: 0;
   font-size: 24px; line-height: 1; font-weight: 700;
   background: linear-gradient(115deg, var(--accent-2), var(--accent)); color: var(--ink);
   border: 0; box-shadow: 0 12px 34px rgba(67, 211, 176, 0.4);
@@ -1333,10 +1333,16 @@ def render_ranking() -> None:
         st.caption("현재 피부 점수가 높은 순이에요.")
         if not view:
             st.caption("이 나이대에는 아직 기록이 없어요.")
-        for rank, entry in enumerate(
-                sorted(view, key=lambda x: x["score"], reverse=True), start=1):
+        score_sorted = sorted(view, key=lambda x: x["score"], reverse=True)
+        show_all_score = st.session_state.get("rank_show_all_score", False)
+        visible_count = len(score_sorted) if show_all_score else 10
+        for rank, entry in enumerate(score_sorted[:visible_count], start=1):
             _person_row(rank, entry,
                         f'<div class="cl-rank__score">{entry["score"]}</div>')
+        if not show_all_score and len(score_sorted) > 10:
+            if st.button("더보기", key="btn_rank_score_more", use_container_width=True):
+                st.session_state.rank_show_all_score = True
+                st.rerun()
 
     with tab_gain:
         st.caption("피부 턴오버 28일 동안 점수가 많이 오른 순이에요. (▲ 상승폭)")
