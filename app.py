@@ -722,13 +722,17 @@ CUSTOM_CSS = """
 .cl-topbrand { font-size: 18px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.1; }
 .cl-topbrand span { display: block; font-family: 'Space Grotesk', monospace; font-size: 8.5px;
   letter-spacing: 1.5px; color: var(--muted); font-weight: 600; margin-top: 3px; }
-/* 로고 이미지 = 홈 이동 */
-.cl-logolink { display: inline-block; line-height: 0; }
-.cl-logo-top { height: 44px; width: auto;
-  filter: drop-shadow(0 6px 18px rgba(67, 211, 176, 0.28)); transition: transform 0.2s ease; }
-.cl-logolink:hover .cl-logo-top { transform: scale(1.05); }
-.cl-logolink--text { line-height: 1.1; font-size: 19px; font-weight: 800; color: var(--text);
-  text-decoration: none; }
+/* 로고 = 홈 이동 (실제 버튼이라 새로고침 없이 이동 -> 로그인 세션이 유지된다) */
+.st-key-logohome { line-height: 0; }
+.st-key-logohome .stButton > button {
+  width: 176px; height: 176px; padding: 0; border: 0; box-shadow: none;
+  background-color: transparent; background-repeat: no-repeat; background-position: left center;
+  background-size: contain; color: transparent; font-size: 0;
+  filter: drop-shadow(0 6px 18px rgba(67, 211, 176, 0.28)); transition: transform 0.2s ease;
+}
+.st-key-logohome .stButton > button:hover {
+  background-color: transparent; border: 0; box-shadow: none; transform: scale(1.05);
+}
 
 /* 쇼핑몰 배지 (구매내역) */
 .cl-site { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 8px;
@@ -839,8 +843,7 @@ def render_login() -> None:
     )
     with st.container(key="loginbox"):
         with st.form(key="login_form"):
-            name = st.text_input("이름", placeholder="이름", key="login_name")
-            st.text_input("아이디", placeholder="아이디", key="login_id")
+            user_id = st.text_input("아이디", placeholder="아이디", key="login_id")
             st.text_input("비밀번호", type="password",
                           placeholder="비밀번호", key="login_pw")
             c1, c2 = st.columns(2)
@@ -854,7 +857,7 @@ def render_login() -> None:
             st.warning("개인정보 활용에 동의해야 서비스를 이용할 수 있어요.")
 
     if login or signup or guest:
-        st.session_state.user_name = (name or "").strip() or "게스트"
+        st.session_state.user_name = (user_id or "").strip() or "게스트"
         st.session_state.pending_login = True
         st.session_state.pop("consent", None)
 
@@ -869,22 +872,28 @@ def section_title(title: str, tag: str) -> None:
 
 
 def render_header() -> None:
-    """상단 브랜드 바(로고 이미지=홈 이동) + 로그아웃 (모든 화면 공통)."""
+    """상단 브랜드 바(로고=홈 이동, 페이지 새로고침 없이 st.button으로 처리) + 로그아웃 (모든 화면 공통)."""
     top_l, top_r = st.columns([3, 1])
     with top_l:
-        uri = logo_data_uri()
-        if uri:
-            st.markdown(
-                f'<a class="cl-logolink" target="_self" href="?nav=home" title="홈으로">'
-                f'<img class="cl-logo-top" src="{uri}" alt="clozkin"></a>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<a class="cl-logolink cl-logolink--text" target="_self" href="?nav=home">'
-                'clozkin</a>',
-                unsafe_allow_html=True,
-            )
+        with st.container(key="logohome"):
+            uri = logo_data_uri()
+            if uri:
+                st.markdown(
+                    f"<style>.st-key-logohome .stButton > button "
+                    f"{{background-image: url('{uri}');}}</style>",
+                    unsafe_allow_html=True,
+                )
+                label = "​"  # 배경 이미지로 로고를 그리므로 글자는 안 보이게
+            else:
+                st.markdown(
+                    "<style>.st-key-logohome .stButton > button "
+                    "{width: auto; height: auto; color: var(--text); font-size: 19px; "
+                    "font-weight: 800; padding: 8px 4px;}</style>",
+                    unsafe_allow_html=True,
+                )
+                label = "clozkin"
+            st.button(label, key="btn_logo_home", on_click=set_nav, args=("home",),
+                      help="홈으로")
     with top_r:
         with st.container(key="logout"):
             st.button("로그아웃", key="btn_logout", on_click=_logout,
