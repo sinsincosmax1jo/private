@@ -790,17 +790,17 @@ CUSTOM_CSS = """
   .cl-shop-btn svg, .cl-price-btn svg { width: 15px; height: 15px; }
   .cl-rank { gap: 9px; padding: 12px 12px; }
   .st-key-chatcard { width: min(340px, calc(100vw - 24px)); }
+}
 
-  /* 모바일 화면 테두리에 민트색 베젤 글로우 */
-  .stApp::after {
-    content: "";
-    position: fixed; inset: 0;
-    border: 3px solid var(--accent);
-    border-radius: 38px;
-    box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.35) inset, 0 0 26px 4px rgba(67, 211, 176, 0.45);
-    pointer-events: none;
-    z-index: 9999;
-  }
+/* 화면 테두리에 민트색 베젤 글로우 (전체 화면 공통) */
+.stApp::after {
+  content: "";
+  position: fixed; inset: 0;
+  border: 3px solid var(--accent);
+  border-radius: 38px;
+  box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.35) inset, 0 0 26px 4px rgba(67, 211, 176, 0.45);
+  pointer-events: none;
+  z-index: 9999;
 }
 </style>
 """
