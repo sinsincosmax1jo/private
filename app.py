@@ -444,7 +444,13 @@ CUSTOM_CSS = """
   --ink: #06231d;
 }
 
-html, body { background: #05070a; overflow-x: hidden; }
+html, body {
+  background: #05070a;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  height: auto !important;
+}
+#root { height: auto !important; overflow: visible !important; min-height: 100vh; }
 .stApp {
   background:
     radial-gradient(1100px 560px at 50% -12%, rgba(67, 211, 176, 0.13), transparent 60%),
