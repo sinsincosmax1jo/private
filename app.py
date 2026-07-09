@@ -926,13 +926,20 @@ CUSTOM_CSS = """
 }
 .stTextInput input:focus, .stNumberInput input:focus { border-color: var(--accent); box-shadow: none; }
 
-/* 얼굴 크기 가이드 - 카메라 프리뷰 위에 얼굴 형태 점선 오버레이 */
+/* 얼굴 가이드 - 카메라 프리뷰 중앙에 귀가 있는 사람 얼굴 형태의 점선 오버레이 */
 .stApp [data-testid="stCameraInput"] div:has(> video) { position: relative; }
 .stApp [data-testid="stCameraInput"] div:has(> video)::after {
-  content: ""; position: absolute; inset: 0; margin: auto;
-  width: 56%; height: 80%; border: 3px dashed rgba(94, 234, 212, 0.9);
-  border-radius: 46% 46% 40% 40% / 58% 58% 46% 46%; pointer-events: none;
-  box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.18);
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 420'>\
+<path fill-rule='evenodd' fill='rgba(0,0,0,0.18)' d='M0,0H300V420H0Z \
+M150,42 C200,42 234,90 234,150 C234,168 246,168 246,180 C246,192 234,196 232,208 \
+C230,230 222,270 205,300 C190,326 172,352 150,378 C128,352 110,326 95,300 \
+C78,270 70,230 68,208 C66,196 54,192 54,180 C54,168 66,168 66,150 C66,90 100,42 150,42 Z'/>\
+<path fill='none' stroke='rgba(94,234,212,0.92)' stroke-width='4' stroke-dasharray='11 9' d='M150,42 \
+C200,42 234,90 234,150 C234,168 246,168 246,180 C246,192 234,196 232,208 \
+C230,230 222,270 205,300 C190,326 172,352 150,378 C128,352 110,326 95,300 \
+C78,270 70,230 68,208 C66,196 54,192 54,180 C54,168 66,168 66,150 C66,90 100,42 150,42 Z'/>\
+</svg>") no-repeat center / 100% 100%;
 }
 
 /* 나이대 배지 (랭킹) */
