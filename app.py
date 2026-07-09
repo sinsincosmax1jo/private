@@ -19,15 +19,14 @@ import re
 import html
 import json
 import base64
+import random
 from io import BytesIO
-from datetime import date
 
-import cv2
 import numpy as np
 import pandas as pd
 import streamlit as st
 import anthropic
-from PIL import Image, ImageDraw
+from PIL import Image
 
 try:  # 위치(GPS) 컴포넌트 - 미설치 시에도 앱이 동작하도록 가드
     from streamlit_geolocation import streamlit_geolocation
@@ -222,104 +221,36 @@ def _text_from_response(response) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Face ID (얼굴 인식) & 오프라인 간이 분석 - OpenCV/통계 기반, API 키 불필요
+# 피부 진단 (나이 입력 기반, 결과는 랜덤)
 # ---------------------------------------------------------------------------
-@st.cache_resource(show_spinner=False)
-def _face_cascade() -> "cv2.CascadeClassifier":
-    return cv2.CascadeClassifier(
-        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    )
+_SKIN_TYPES = ["건성", "지성", "복합성", "민감성"]
+_CONCERN_POOL = [
+    "붉은기·트러블", "번들거림(유분)", "피부톤 불균일", "칙칙함",
+    "속건조", "모공", "다크서클", "각질",
+]
+_INGREDIENT_POOL = [
+    "히알루론산", "나이아신아마이드", "센텔라", "비타민C",
+    "세라마이드", "판테놀", "어성초", "마데카소사이드",
+]
 
 
-def detect_faces(image_bytes: bytes):
-    """이미지에서 얼굴 영역을 찾아 (RGB 배열, 얼굴 박스 리스트)를 반환."""
-    img = Image.open(BytesIO(image_bytes)).convert("RGB")
-    img.thumbnail((900, 900), Image.LANCZOS)  # 큰 사진은 축소해 인식 속도 확보
-    arr = np.array(img)
-    gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-    faces = _face_cascade().detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
-    )
-    return arr, [tuple(int(v) for v in f) for f in faces]
-
-
-def annotate_faces(arr: np.ndarray, faces) -> Image.Image:
-    """인식된 얼굴에 민트색 Face ID 프레임(모서리 브래킷)을 그려 반환."""
-    img = Image.fromarray(arr).convert("RGB")
-    draw = ImageDraw.Draw(img)
-    for (x, y, w, h) in faces:
-        draw.rectangle([x, y, x + w, y + h], outline=(67, 211, 176), width=3)
-        c = max(14, w // 6)
-        for cx, cy, dx, dy in (
-            (x, y, 1, 1), (x + w, y, -1, 1),
-            (x, y + h, 1, -1), (x + w, y + h, -1, -1),
-        ):
-            draw.line([cx, cy, cx + dx * c, cy], fill=(94, 234, 212), width=6)
-            draw.line([cx, cy, cx, cy + dy * c], fill=(94, 234, 212), width=6)
-    return img
-
-
-def local_diagnose(arr: np.ndarray, faces) -> dict:
-    """API 키가 없을 때 이미지 통계로 간이 피부 분석 (Face ID 간이 모드)."""
-    if faces:
-        x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-        region = arr[y:y + h, x:x + w]
-    else:
-        region = arr
-    r = region[..., 0].astype(np.float32)
-    g = region[..., 1].astype(np.float32)
-    b = region[..., 2].astype(np.float32)
-    lum = 0.299 * r + 0.587 * g + 0.114 * b
-    brightness = float(lum.mean())
-    redness = float((r - (g + b) / 2).mean())   # 붉은기·트러블
-    oil = float((lum > 205).mean())              # 유분(하이라이트 비율)
-    evenness = float(lum.std())                  # 톤 균일도(높을수록 불균일)
-
-    score, concerns = 82, []
-    if redness > 18:
-        score -= 8
-        concerns.append("붉은기·트러블")
-    if oil > 0.08:
-        score -= 6
-        concerns.append("번들거림(유분)")
-    if evenness > 55:
-        score -= 5
-        concerns.append("피부톤 불균일")
-    if brightness < 90:
-        score -= 4
-        concerns.append("칙칙함")
-    if not concerns:
-        concerns = ["전반적으로 안정적"]
-    score = max(58, min(94, score))
-
-    if oil > 0.1 and redness > 15:
-        skin_type = "복합성"
-    elif oil > 0.1:
-        skin_type = "지성"
-    elif brightness < 95 and oil < 0.04:
-        skin_type = "건성"
-    elif redness > 18:
-        skin_type = "민감성"
-    else:
-        skin_type = "복합성"
-
-    ing_map = {
-        "붉은기·트러블": "센텔라",
-        "번들거림(유분)": "나이아신아마이드",
-        "피부톤 불균일": "비타민C",
-        "칙칙함": "비타민C",
-        "전반적으로 안정적": "히알루론산",
-    }
-    ingredients = list(dict.fromkeys(ing_map.get(c, "히알루론산") for c in concerns))
-    if skin_type == "건성":
-        ingredients = ["세라마이드"] + ingredients
-    ingredients = list(dict.fromkeys(ingredients))[:3]
-
+def random_diagnose(age: int) -> dict:
+    """나이만 입력받아 무작위 피부 진단 결과를 생성 (데모용)."""
+    score = random.randint(61, 96)
+    skin_type = random.choice(_SKIN_TYPES)
+    concerns = random.sample(_CONCERN_POOL, k=random.randint(2, 3))
+    ingredients = random.sample(_INGREDIENT_POOL, k=random.randint(2, 3))
+    summary = random.choice([
+        f"{age}세 평균보다 관리가 잘 되고 있어요! 지금 루틴 유지 추천 👍",
+        f"{age}세 기준 딱 평균 정도예요. 보습만 챙겨도 확 좋아질 거예요.",
+        f"요즘 컨디션이 살짝 지쳐 보여요. 수분 채우기부터 시작해봐요 💧",
+        f"기본기는 탄탄해요. 포인트 케어만 더하면 완벽해요!",
+    ])
     return {
-        "score": int(score),
+        "score": score,
         "skin_type": skin_type,
-        "concerns": concerns[:3],
-        "summary": "Face ID 간이 분석 결과예요. AI 정밀 진단은 API 키를 연결하면 이용할 수 있어요.",
+        "concerns": concerns,
+        "summary": summary,
         "recommended_ingredients": ingredients,
     }
 
@@ -345,43 +276,6 @@ def local_routine(event_label: str, days_left: int, diagnosis: dict) -> dict:
         "today_task": routine[0]["task"],
         "products": recommend_products(diagnosis),
     }
-
-
-def diagnose_skin(client: anthropic.Anthropic, image_bytes: bytes, media_type: str) -> dict:
-    """얼굴 사진을 Claude Vision으로 분석해 피부 상태 dict 반환."""
-    b64_payload = base64.b64encode(image_bytes).decode("ascii")
-    prompt = (
-        "너는 남성 뷰티 초보자를 위한 친절한 피부 분석 AI야. "
-        "첨부된 얼굴 사진을 보고 피부 상태를 분석해줘. "
-        "전문 용어는 최소화하고 초보자도 이해하기 쉽게 설명해. "
-        "아래 JSON 형식으로만, 다른 설명 없이 응답해:\n"
-        '{"score": 0-100 사이 정수, '
-        '"skin_type": "건성/지성/복합성/민감성 중 하나", '
-        '"concerns": ["피부 고민 키워드 2~3개, 짧게"], '
-        '"summary": "현재 피부 상태에 대한 한 줄 요약 (초보자 친화적 말투)", '
-        '"recommended_ingredients": ["추천 성분 2~3개"]}'
-    )
-    response = client.messages.create(
-        model=MODEL_NAME,
-        max_tokens=600,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": b64_payload,
-                        },
-                    },
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ],
-    )
-    return _extract_json(_text_from_response(response))
 
 
 CHAT_SYSTEM = (
@@ -702,10 +596,25 @@ CUSTOM_CSS = """
 .cl-price-btn:hover { transform: translateY(-1px); border-color: transparent; color: #2a1e05;
   background: linear-gradient(115deg, #ffd98a, #f4c15e); }
 
-/* ---- 카메라 거울(좌우반전) 모드 - 셀피처럼 자연스럽게 미리보기 ----
-   앱 내 유일한 video 요소가 웹캠 프리뷰라 안전하게 좌우반전 적용 */
-.stApp [data-testid="stCameraInput"] video,
-.stApp video { transform: scaleX(-1); }
+/* ---- 상단 브랜드 바 + 로그인 ---- */
+.cl-topbrand { font-size: 18px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.1; }
+.cl-topbrand span { display: block; font-family: 'Space Grotesk', monospace; font-size: 8.5px;
+  letter-spacing: 1.5px; color: var(--muted); font-weight: 600; margin-top: 3px; }
+.st-key-logout .stButton > button { font-size: 12px; font-weight: 600; padding: 8px 6px;
+  color: var(--muted); }
+.st-key-logout .stButton > button:hover { color: var(--accent); border-color: var(--accent); }
+.st-key-loginbox { max-width: 360px; margin: 6px auto 0; }
+
+/* 입력창(로그인 / 나이 등) 공통 스타일 */
+.stTextInput input, .stNumberInput input {
+  background: var(--glass); border: 1px solid var(--glass-brd); border-radius: 12px; color: var(--text);
+}
+.stTextInput input:focus, .stNumberInput input:focus { border-color: var(--accent); box-shadow: none; }
+
+/* D-day 케어 모드(챗봇 안 확장 패널) */
+.st-key-chat_dday { padding: 0 12px; }
+.st-key-chat_dday [data-testid="stExpander"] {
+  border: 1px solid var(--glass-brd); border-radius: 12px; background: rgba(255,255,255,0.03); }
 
 /* ---- D-day 추천 제품 ---- */
 .cl-rec { display: flex; align-items: center; gap: 12px; background: var(--glass);
@@ -744,13 +653,42 @@ CUSTOM_CSS = """
 # ---------------------------------------------------------------------------
 # 화면 렌더링
 # ---------------------------------------------------------------------------
-def go(screen: str) -> None:
-    st.session_state.screen = screen
+def _logout() -> None:
+    st.session_state.logged_in = False
 
 
-def back_button() -> None:
-    with st.container(key="back"):
-        st.button("← 홈으로", key="btn_back", on_click=go, args=("home",))
+def render_login() -> None:
+    """가짜 로그인 화면 - 어떤 값을 입력해도 로그인된다 (데모용)."""
+    uri = logo_data_uri()
+    if uri:
+        st.markdown(
+            f'<div class="cl-logo-wrap"><img class="cl-logo" src="{uri}" alt="clozkin"></div>'
+            '<p class="cl-badge-tag">SKINCARE, MANDATORY FOR MEN</p>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="cl-brand"><span class="cl-brand__dot"></span>'
+            '<span class="cl-brand__name">clozkin</span></div>'
+            '<p class="cl-badge-tag">SKINCARE, MANDATORY FOR MEN</p>',
+            unsafe_allow_html=True,
+        )
+    st.markdown(
+        '<h1 class="cl-hero__title">남자의 피부,<br>'
+        '<span class="cl-grad">이제 관리는 필수.</span></h1>',
+        unsafe_allow_html=True,
+    )
+    with st.container(key="loginbox"):
+        with st.form(key="login_form"):
+            st.text_input("아이디", placeholder="아이디 (아무거나 입력)", key="login_id")
+            st.text_input("비밀번호", type="password",
+                          placeholder="비밀번호 (아무거나 입력)", key="login_pw")
+            submitted = st.form_submit_button("로그인", type="primary",
+                                              use_container_width=True)
+        st.caption("데모 버전이에요. 어떤 값을 입력해도 바로 로그인돼요.")
+    if submitted:
+        st.session_state.logged_in = True
+        st.rerun()
 
 
 def section_title(title: str, tag: str) -> None:
@@ -758,127 +696,20 @@ def section_title(title: str, tag: str) -> None:
     st.markdown(f'<div class="cl-h">{title}</div>', unsafe_allow_html=True)
 
 
-def nav_card(idx: str, tag: str, title: str, desc: str, target: str) -> None:
-    # 버튼 라벨을 3개 문단(번호·제목·설명)으로 넘겨 CSS로 카드처럼 스타일링한다.
-    label = f"{idx} · {tag}\n\n{title}\n\n{desc}"
-    st.button(label, key=f"navbtn_{target}", on_click=go, args=(target,),
-              use_container_width=True)
+def render_age_diagnosis() -> None:
+    """나이만 입력하면 랜덤 피부 진단 결과를 보여준다. 결과는 랭킹에 반영된다."""
+    st.markdown('<div class="cl-sec">DIAGNOSIS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">AI 피부 진단</div>', unsafe_allow_html=True)
+    st.caption("나이만 입력하면 30초 만에 내 피부 점수를 알려드려요.")
 
-
-def render_home() -> None:
-    uri = logo_data_uri()
-    if uri:
-        st.markdown(
-            f'<div class="cl-logo-wrap"><img class="cl-logo" src="{uri}" alt="clozkin"></div>'
-            '<p class="cl-badge-tag">AI BEAUTY GUIDE</p>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            '<div class="cl-brand"><span class="cl-brand__dot"></span>'
-            '<span class="cl-brand__name">clozkin</span></div>'
-            '<p class="cl-badge-tag">AI BEAUTY GUIDE</p>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown(
-        '<h1 class="cl-hero__title">세안 다음은,<br>'
-        '<span class="cl-grad">당연히 스킨케어.</span></h1>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<p class="cl-hero__sub">토너·세럼 순서 몰라도 괜찮아요.<br>'
-        '사진 한 장으로 지금 내 피부를 읽고, 딱 필요한 것만 알려드릴게요.</p>',
-        unsafe_allow_html=True,
-    )
-
-    diagnosis = st.session_state.get("last_diagnosis")
-    if diagnosis and diagnosis.get("summary"):
-        st.markdown(
-            f'<div class="cl-status-wrap"><div class="cl-status">'
-            f'<b>최근 진단</b> · {diagnosis["summary"]}</div></div>',
-            unsafe_allow_html=True,
-        )
-
-    nav_card("01", "DIAGNOSIS", "AI 피부 진단",
-             "얼굴을 스캔해 유수분·트러블·모공 상태를 30초 만에 분석해요.", "diagnose")
-    nav_card("02", "RANKING", "우리 동네 피부 랭킹",
-             "같은 동네 남자들의 피부 점수와, 상위권이 실제 쓰는 아이템.", "ranking")
-    nav_card("03", "D-DAY", "D-day 케어 모드",
-             "소개팅·면접 전, 날짜 역산 집중 관리 루틴을 짜드려요.", "event")
-
-
-def render_diagnose(client: anthropic.Anthropic | None) -> None:
-    back_button()
-    section_title("AI 피부 진단", "DIAGNOSIS")
-
-    if client is None:
-        st.markdown(
-            '<div class="cl-note">🔒 <b>Face ID</b>로 얼굴을 인식해 간이 진단을 바로 볼 수 있어요. '
-            'AI 정밀 진단을 켜려면 Streamlit Secrets에 <code>ANTHROPIC_API_KEY</code>를 추가하세요.</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.caption("얼굴이 잘 보이도록 밝은 곳에서 촬영하거나 사진을 올려주세요.")
-    source = st.radio("입력 방식", ["카메라 촬영", "사진 업로드"], horizontal=True,
-                      label_visibility="collapsed")
-
-    image_bytes, media_type = None, "image/jpeg"
-    if source == "카메라 촬영":
-        shot = st.camera_input("사진 촬영", label_visibility="collapsed")
-        if shot is not None:
-            image_bytes = shot.getvalue()
-            media_type = shot.type or "image/jpeg"
-    else:
-        up = st.file_uploader("사진 업로드", type=["jpg", "jpeg", "png", "webp"],
+    col_a, col_b = st.columns([1, 1.2])
+    with col_a:
+        age = st.number_input("나이", min_value=10, max_value=90, value=28, step=1,
                               label_visibility="collapsed")
-        if up is not None:
-            image_bytes = up.getvalue()
-            media_type = up.type or "image/jpeg"
-
-    # --- Face ID: 얼굴 인식 ---
-    arr, faces = None, []
-    if image_bytes:
-        with st.spinner("Face ID · 얼굴을 인식하는 중..."):
-            try:
-                arr, faces = detect_faces(image_bytes)
-            except Exception:  # noqa: BLE001 - 인식 실패해도 앱은 계속 동작
-                arr, faces = None, []
-
-        if faces:
-            st.markdown(
-                f'<div class="cl-faceid cl-faceid--ok"><span class="cl-faceid__dot"></span>'
-                f'<span>Face ID 인식 완료 · 얼굴 {len(faces)}개 감지됨</span></div>',
-                unsafe_allow_html=True,
-            )
-            st.image(annotate_faces(arr, faces), use_container_width=True)
-        else:
-            st.markdown(
-                '<div class="cl-faceid cl-faceid--warn"><span class="cl-faceid__dot"></span>'
-                '<span>얼굴을 찾지 못했어요. 정면·밝은 곳에서 다시 시도해주세요.</span></div>',
-                unsafe_allow_html=True,
-            )
-            if arr is not None:
-                st.image(arr, use_container_width=True)
-
-    can_diagnose = bool(image_bytes and faces)
-    if st.button("이 사진으로 진단하기", type="primary", use_container_width=True,
-                 disabled=not can_diagnose):
-        with st.spinner("피부 상태를 분석하는 중..."):
-            try:
-                if client is not None:
-                    st.session_state.last_diagnosis = diagnose_skin(
-                        client, image_bytes, media_type)
-                else:
-                    st.session_state.last_diagnosis = local_diagnose(arr, faces)
-            except json.JSONDecodeError:
-                st.session_state.last_diagnosis = local_diagnose(arr, faces)
-                st.warning("AI 응답을 해석하지 못해 Face ID 간이 분석으로 대체했어요.")
-            except anthropic.APIError:
-                st.session_state.last_diagnosis = local_diagnose(arr, faces)
-                st.warning("AI 연결에 문제가 있어 Face ID 간이 분석으로 대체했어요.")
-            except Exception as e:  # noqa: BLE001
-                st.error(f"알 수 없는 오류: {e}")
+    with col_b:
+        run = st.button("내 피부 진단받기", type="primary", use_container_width=True)
+    if run:
+        st.session_state.last_diagnosis = random_diagnose(int(age))
 
     result = st.session_state.get("last_diagnosis")
     if result:
@@ -897,8 +728,6 @@ def render_diagnose(client: anthropic.Anthropic | None) -> None:
             f'</div>',
             unsafe_allow_html=True,
         )
-        st.button("동네 랭킹 보러가기", use_container_width=True,
-                  on_click=go, args=("ranking",))
 
 
 def render_nearby_map() -> None:
@@ -925,9 +754,23 @@ def render_nearby_map() -> None:
 
 
 def render_ranking() -> None:
-    back_button()
-    section_title("우리 동네 피부 랭킹", "RANKING")
+    # 상단 브랜드 바 + 로그아웃
+    top_l, top_r = st.columns([3, 1])
+    with top_l:
+        st.markdown(
+            '<div class="cl-topbrand">clozkin'
+            '<span>SKINCARE, MANDATORY FOR MEN</span></div>',
+            unsafe_allow_html=True,
+        )
+    with top_r:
+        with st.container(key="logout"):
+            st.button("로그아웃", key="btn_logout", on_click=_logout,
+                      use_container_width=True)
 
+    # AI 피부 진단 (나이 입력 → 랜덤 결과)
+    render_age_diagnosis()
+
+    section_title("우리 동네 피부 랭킹", "RANKING")
     render_nearby_map()
 
     diagnosis = st.session_state.get("last_diagnosis")
@@ -980,95 +823,36 @@ def render_ranking() -> None:
         )
 
 
-def render_event(client: anthropic.Anthropic | None) -> None:
-    back_button()
-    section_title("D-day 케어 모드", "D-DAY")
+def build_dday_message(client: anthropic.Anthropic | None,
+                       event_label: str, days_left: int) -> str:
+    """D-day 케어 루틴을 만들어 챗봇 말풍선용 텍스트로 반환 (챗봇 기능)."""
+    diagnosis = st.session_state.get("last_diagnosis") or {
+        "skin_type": "정보 없음",
+        "concerns": ["일반 컨디션 관리"],
+        "summary": "아직 피부 진단을 하지 않았어요.",
+    }
+    try:
+        if client is not None:
+            result = generate_routine(client, event_label, days_left, diagnosis)
+        else:
+            result = local_routine(event_label, days_left, diagnosis)
+    except Exception:  # noqa: BLE001 - 실패 시 규칙 기반 루틴으로 폴백
+        result = local_routine(event_label, days_left, diagnosis)
+    if not result.get("products"):
+        result["products"] = recommend_products(diagnosis)
 
-    if client is None:
-        st.markdown(
-            '<div class="cl-note">📅 <b>간이 루틴</b>은 API 키 없이도 바로 만들어드려요. '
-            'AI 맞춤 루틴을 켜려면 Streamlit Secrets에 <code>ANTHROPIC_API_KEY</code>를 추가하세요.</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown('<div class="cl-sec">어떤 이벤트를 준비하시나요?</div>', unsafe_allow_html=True)
-    event_key = st.radio(
-        "이벤트", list(EVENT_LABELS.keys()),
-        format_func=lambda k: EVENT_LABELS[k], horizontal=True,
-        label_visibility="collapsed",
-    )
-    st.markdown('<div class="cl-sec">언제인가요?</div>', unsafe_allow_html=True)
-    target_date = st.date_input("언제인가요?", min_value=date.today(),
-                                label_visibility="collapsed")
-
-    if st.button("케어 루틴 만들기", type="primary", use_container_width=True):
-        days_left = (target_date - date.today()).days
-        if days_left < 0:
-            st.error("목표 날짜는 오늘 이후여야 합니다.")
-            return
-        diagnosis = st.session_state.get("last_diagnosis") or {
-            "skin_type": "정보 없음",
-            "concerns": ["일반 컨디션 관리"],
-            "summary": "아직 피부 진단을 하지 않았어요.",
-        }
-        event_label = EVENT_LABELS.get(event_key, event_key)
-        with st.spinner("맞춤 루틴을 짜는 중..."):
-            try:
-                if client is not None:
-                    result = generate_routine(client, event_label, days_left, diagnosis)
-                else:
-                    result = local_routine(event_label, days_left, diagnosis)
-            except json.JSONDecodeError:
-                result = local_routine(event_label, days_left, diagnosis)
-                st.warning("AI 응답을 해석하지 못해 간이 루틴으로 대체했어요.")
-            except anthropic.APIError:
-                result = local_routine(event_label, days_left, diagnosis)
-                st.warning("AI 연결에 문제가 있어 간이 루틴으로 대체했어요.")
-            except Exception as e:  # noqa: BLE001
-                result = None
-                st.error(f"알 수 없는 오류: {e}")
-            if result is not None:
-                result["days_left"] = days_left
-                result["event_label"] = event_label
-                # AI가 제품을 안 줬으면 로컬 추천으로 보완
-                if not result.get("products"):
-                    result["products"] = recommend_products(diagnosis)
-                st.session_state.last_routine = result
-
-    routine = st.session_state.get("last_routine")
-    if routine:
-        st.markdown(
-            f'<div class="cl-countdown">'
-            f'<p class="cl-countdown__dday">D-{routine["days_left"]}</p>'
-            f'<p class="cl-countdown__label">{routine["event_label"]}까지</p></div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div class="cl-today"><p class="cl-today__label">TODAY</p>'
-            f'<p class="cl-today__text">{routine.get("today_task", "")}</p></div>',
-            unsafe_allow_html=True,
-        )
-        for item in routine.get("routine", []):
-            st.markdown(
-                f'<div class="cl-routine"><span class="cl-routine__day">'
-                f'{item.get("day_label", "")}</span><span>{item.get("task", "")}</span></div>',
-                unsafe_allow_html=True,
-            )
-
-        products = routine.get("products", [])
-        if products:
-            st.markdown('<div class="cl-sec">RECOMMENDED</div>', unsafe_allow_html=True)
-            st.markdown('<div class="cl-h">이벤트 맞춤 추천 제품</div>', unsafe_allow_html=True)
-            for p in products:
-                name = p.get("name", "")
-                reason = p.get("reason", "")
-                st.markdown(
-                    f'<div class="cl-rec"><div class="cl-rec__body">'
-                    f'<div class="cl-rec__name">{name}</div>'
-                    f'<div class="cl-rec__reason">{reason}</div></div>'
-                    f'{buy_buttons(name)}</div>',
-                    unsafe_allow_html=True,
-                )
+    lines = [f"📅 {event_label} D-{days_left} 케어 루틴이에요!"]
+    if result.get("today_task"):
+        lines.append(f"✅ 오늘 할 일: {result['today_task']}")
+    for item in result.get("routine", []):
+        lines.append(f"• {item.get('day_label', '')} {item.get('task', '')}")
+    products = result.get("products", [])
+    if products:
+        lines.append("\n🛍️ 추천 제품")
+        for p in products:
+            lines.append(f"• {p.get('name', '')} — {p.get('reason', '')}")
+        lines.append("(제품은 랭킹 화면에서 올리브영·최저가로 바로 살 수 있어요)")
+    return "\n".join(lines)
 
 
 # 빠른 질문 추천 칩 (초보자가 바로 누를 수 있는 예시 질문)
@@ -1146,6 +930,27 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
                     unsafe_allow_html=True,
                 )
 
+                # --- D-day 케어 모드 (챗봇 기능) ---
+                with st.container(key="chat_dday"):
+                    with st.expander("📅 D-day 케어 모드"):
+                        with st.form(key="dday_form"):
+                            ev = st.radio(
+                                "이벤트", list(EVENT_LABELS.keys()),
+                                format_func=lambda k: EVENT_LABELS[k], horizontal=True,
+                                label_visibility="collapsed",
+                            )
+                            days = st.number_input("며칠 뒤인가요?", min_value=0,
+                                                   max_value=60, value=7, step=1)
+                            dday_submit = st.form_submit_button(
+                                "루틴 만들기", use_container_width=True)
+                    if dday_submit:
+                        with st.spinner("맞춤 케어 루틴을 짜는 중..."):
+                            msg = build_dday_message(
+                                client, EVENT_LABELS.get(ev, ev), int(days))
+                        st.session_state.chat_messages.append(
+                            {"role": "assistant", "content": msg})
+                        st.rerun()
+
                 # --- 빠른 질문 추천 칩 ---
                 with st.container(key="chat_chips"):
                     cols = st.columns(2, gap="small")
@@ -1178,22 +983,16 @@ def main() -> None:
     st.set_page_config(page_title="clozkin", page_icon=page_icon, layout="centered")
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-    if "screen" not in st.session_state:
-        st.session_state.screen = "home"
-
     api_key = get_api_key()
     client = get_client(api_key) if api_key else None
 
-    screen = st.session_state.screen
-    if screen == "diagnose":
-        render_diagnose(client)
-    elif screen == "ranking":
-        render_ranking()
-    elif screen == "event":
-        render_event(client)
-    else:
-        render_home()
+    # 가짜 로그인 게이트 - 로그인 전에는 로그인 화면만 보여준다.
+    if not st.session_state.get("logged_in"):
+        render_login()
+        return
 
+    # 로그인 후에는 곧바로 '우리 동네 랭킹' 화면 (메뉴 없음)
+    render_ranking()
     render_chat_widget(client)
 
 
