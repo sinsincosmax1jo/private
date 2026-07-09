@@ -646,9 +646,6 @@ CUSTOM_CSS = """
 }
 .stTextInput input:focus, .stNumberInput input:focus { border-color: var(--accent); box-shadow: none; }
 
-/* 카메라 프리뷰를 거울(좌우반전) 모드로 - 셀피처럼 자연스럽게 */
-.stApp [data-testid="stCameraInput"] video { transform: scaleX(-1); }
-
 /* D-day 케어 모드(챗봇 안 확장 패널) */
 .st-key-chat_dday { padding: 0 12px; }
 .st-key-chat_dday [data-testid="stExpander"] {
