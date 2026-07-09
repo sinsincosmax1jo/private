@@ -680,12 +680,11 @@ def render_login() -> None:
     )
     with st.container(key="loginbox"):
         with st.form(key="login_form"):
-            st.text_input("아이디", placeholder="아이디 (아무거나 입력)", key="login_id")
+            st.text_input("아이디", placeholder="아이디", key="login_id")
             st.text_input("비밀번호", type="password",
-                          placeholder="비밀번호 (아무거나 입력)", key="login_pw")
+                          placeholder="비밀번호", key="login_pw")
             submitted = st.form_submit_button("로그인", type="primary",
                                               use_container_width=True)
-        st.caption("데모 버전이에요. 어떤 값을 입력해도 바로 로그인돼요.")
     if submitted:
         st.session_state.logged_in = True
         st.rerun()
