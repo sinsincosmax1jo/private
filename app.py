@@ -444,11 +444,20 @@ CUSTOM_CSS = """
   --ink: #06231d;
 }
 
+html, body { background: #05070a; }
 .stApp {
   background:
     radial-gradient(1100px 560px at 50% -12%, rgba(67, 211, 176, 0.13), transparent 60%),
     radial-gradient(900px 500px at 110% 8%, rgba(94, 234, 212, 0.06), transparent 55%),
     linear-gradient(180deg, #0b0e13 0%, #070a0e 100%);
+  max-width: 430px;
+  margin: 0 auto;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: 44px;
+  border: 3px solid var(--accent);
+  box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.35), 0 0 30px 6px rgba(67, 211, 176, 0.45);
 }
 .stApp, .stApp p, .stApp span, .stApp div, .stApp h1, .stApp h2, .stApp h3, .stApp label {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -596,7 +605,9 @@ CUSTOM_CSS = """
 
 /* ---- 하단 탭 내비게이션 ---- */
 .st-key-bottomnav {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 9998;
+  /* 폰 프레임(430px, 가운데 정렬) 바깥 실제 뷰포트 기준 고정이라
+     프레임 좌우 가장자리에 맞춰 너비를 맞춰준다 */
+  position: fixed; left: max(0px, calc(50% - 215px)); right: max(0px, calc(50% - 215px)); bottom: 0; z-index: 9998;
   background: rgba(10, 14, 19, 0.96); backdrop-filter: blur(16px);
   border-top: 1px solid var(--glass-brd);
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
@@ -613,9 +624,9 @@ CUSTOM_CSS = """
 
 /* ---- 플로팅 채팅봇 (우측 하단) ---- */
 .st-key-chatwidget {
-  /* 넓은 화면에선 본문(560px) 컬럼 오른쪽 가장자리에 맞춰 가운데쪽으로,
+  /* 폰 프레임(430px, 가운데 정렬) 오른쪽 안쪽에 맞춰 가운데쪽으로,
      좁은 화면에선 화면 끝 16px 로 자동 조정 */
-  position: fixed; right: max(16px, calc(50% - 272px)); bottom: 88px; z-index: 9999;
+  position: fixed; right: max(16px, calc(50% - 207px)); bottom: 88px; z-index: 9999;
   width: auto; max-width: calc(100vw - 28px);
 }
 /* 열린 상태의 채팅 카드 - 불투명 배경으로 본문과 겹쳐 글자가 비치는 문제 방지 */
@@ -790,17 +801,6 @@ CUSTOM_CSS = """
   .cl-shop-btn svg, .cl-price-btn svg { width: 15px; height: 15px; }
   .cl-rank { gap: 9px; padding: 12px 12px; }
   .st-key-chatcard { width: min(340px, calc(100vw - 24px)); }
-}
-
-/* 화면 테두리에 민트색 베젤 글로우 (전체 화면 공통) */
-.stApp::after {
-  content: "";
-  position: fixed; inset: 0;
-  border: 3px solid var(--accent);
-  border-radius: 38px;
-  box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.35) inset, 0 0 26px 4px rgba(67, 211, 176, 0.45);
-  pointer-events: none;
-  z-index: 9999;
 }
 </style>
 """
