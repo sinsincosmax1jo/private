@@ -41,13 +41,13 @@ LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clozkin_lo
 # 우리 동네 피부 랭킹 - 목업 데이터 (실제 서비스에서는 DB에서 조회)
 # ---------------------------------------------------------------------------
 MOCK_RANKING = [
-    {"name": "김O우", "score": 91, "product": "라운드랩 자작나무 수분 크림"},
-    {"name": "이O훈", "score": 87, "product": "아누아 어성초 77 토너"},
-    {"name": "박O진", "score": 83, "product": "달바 백자 크림"},
-    {"name": "최O민", "score": 79, "product": "라로슈포제 시카플라스트"},
-    {"name": "정O석", "score": 74, "product": "닥터지 블랙스네일 크림"},
-    {"name": "강O우", "score": 68, "product": "센카 퍼펙트 워터 클렌징"},
-    {"name": "조O현", "score": 63, "product": "이니스프리 그린티 세럼"},
+    {"name": "김O우", "score": 91, "gain": 7, "product": "라운드랩 자작나무 수분 크림"},
+    {"name": "이O훈", "score": 87, "gain": 12, "product": "아누아 어성초 77 토너"},
+    {"name": "박O진", "score": 83, "gain": 5, "product": "달바 백자 크림"},
+    {"name": "최O민", "score": 79, "gain": 15, "product": "라로슈포제 시카플라스트"},
+    {"name": "정O석", "score": 74, "gain": 9, "product": "닥터지 블랙스네일 크림"},
+    {"name": "강O우", "score": 68, "gain": 18, "product": "센카 퍼펙트 워터 클렌징"},
+    {"name": "조O현", "score": 63, "gain": 3, "product": "이니스프리 그린티 세럼"},
 ]
 
 # 많이 쓰는 화장품 랭킹 - 목업 데이터 (users = 동네 사용자 수)
@@ -276,6 +276,7 @@ def random_diagnose(age: int, moisture: str = "보통", tone: str = "보통",
     ])
     return {
         "score": score,
+        "gain": random.randint(2, 16),  # 28일 피부 턴오버 동안 상승한 점수
         "skin_type": skin_type,
         "concerns": concerns,
         "summary": summary,
@@ -502,6 +503,11 @@ CUSTOM_CSS = """
 .cl-rank__product { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
 .cl-rank__score { font-family: 'Space Grotesk', monospace; font-size: 16px; font-weight: 700; margin-right: 8px; }
+.cl-rank__gain { color: var(--accent); }
+/* 랭킹 탭 */
+.stApp [data-baseweb="tab-list"] { gap: 6px; background: transparent; }
+.stApp [data-baseweb="tab"] { font-weight: 700; }
+.stApp [data-baseweb="tab-highlight"] { background: var(--accent); }
 .cl-rank__link { font-size: 11px; color: var(--accent); text-decoration: none; white-space: nowrap; }
 .cl-rank__link:hover { text-decoration: underline; }
 
@@ -801,6 +807,21 @@ def render_nearby_map() -> None:
         st.caption("위치 권한을 허용하면 실제 내 주변으로 지도가 바뀌어요. (지금은 예시 위치)")
 
 
+def _person_row(rank: int, entry: dict, value_html: str) -> None:
+    """랭킹 한 줄 렌더. value_html 자리에 점수 또는 상승폭을 넣는다."""
+    st.markdown(
+        f'<div class="cl-rank {"is-me" if entry.get("is_me") else ""}">'
+        f'<div class="cl-rank__num">{rank}</div>'
+        f'<div class="cl-rank__body">'
+        f'<div class="cl-rank__name">{entry["name"]}</div>'
+        f'<div class="cl-rank__product">{entry["product"]}</div></div>'
+        f'{value_html}'
+        f'{buy_buttons(entry["product"])}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_ranking() -> None:
     # 상단 브랜드 바 + 로그아웃
     top_l, top_r = st.columns([3, 1])
@@ -827,26 +848,27 @@ def render_ranking() -> None:
         board.append({
             "name": "나 (진단 결과)",
             "score": diagnosis["score"],
+            "gain": int(diagnosis.get("gain", 0)),
             "product": (diagnosis.get("recommended_ingredients") or ["-"])[0],
             "is_me": True,
         })
 
-    st.caption("피부 진단 결과를 기반으로 순위에 반영했어요" if diagnosis
-               else "피부 진단을 하면 내 순위도 함께 볼 수 있어요")
+    tab_score, tab_gain = st.tabs(["🏆 피부 점수 순위", "📈 28일 상승 순위"])
 
-    board.sort(key=lambda x: x["score"], reverse=True)
-    for rank, entry in enumerate(board, start=1):
-        st.markdown(
-            f'<div class="cl-rank {"is-me" if entry.get("is_me") else ""}">'
-            f'<div class="cl-rank__num">{rank}</div>'
-            f'<div class="cl-rank__body">'
-            f'<div class="cl-rank__name">{entry["name"]}</div>'
-            f'<div class="cl-rank__product">{entry["product"]}</div></div>'
-            f'<div class="cl-rank__score">{entry["score"]}</div>'
-            f'{buy_buttons(entry["product"])}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    with tab_score:
+        st.caption("현재 피부 점수가 높은 순이에요." if diagnosis
+                   else "피부 진단을 하면 내 순위도 함께 볼 수 있어요.")
+        for rank, entry in enumerate(
+                sorted(board, key=lambda x: x["score"], reverse=True), start=1):
+            _person_row(rank, entry,
+                        f'<div class="cl-rank__score">{entry["score"]}</div>')
+
+    with tab_gain:
+        st.caption("피부 턴오버 28일 동안 점수가 많이 오른 순이에요. (▲ 상승폭)")
+        for rank, entry in enumerate(
+                sorted(board, key=lambda x: x.get("gain", 0), reverse=True), start=1):
+            _person_row(rank, entry,
+                        f'<div class="cl-rank__score cl-rank__gain">▲{entry.get("gain", 0)}</div>')
 
     # --- 많이 쓰는 화장품 랭킹 ---
     st.markdown('<div class="cl-sec">MOST USED</div>', unsafe_allow_html=True)
