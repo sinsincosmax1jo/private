@@ -723,23 +723,20 @@ CUSTOM_CSS = """
 .cl-topbrand span { display: block; font-family: 'Space Grotesk', monospace; font-size: 8.5px;
   letter-spacing: 1.5px; color: var(--muted); font-weight: 600; margin-top: 3px; }
 /* 로고 = 홈 이동 (실제 버튼이라 새로고침 없이 이동 -> 로그인 세션이 유지된다)
-   이미지는 눈에 보이는 <img>로 그리고, 그 위에 투명 버튼을 겹쳐 클릭만 받는다
-   (버튼 자체에 배경이미지를 넣으면 streamlit 기본 버튼 크기에 밀려 깨지는 문제가 있었음) */
-.st-key-logohome { position: relative; width: 176px; height: 176px; line-height: 0; }
-.st-key-logohome .cl-logohome-visual {
-  position: absolute; inset: 0; z-index: 1; display: flex; align-items: center;
-  justify-content: flex-start; pointer-events: none;
+   버튼(및 조상 wrapper)을 position:absolute로 빼면 streamlit이 마운트 시
+   컨테이너의 실제 콘텐츠 높이를 0으로 측정해버려 레이아웃이 깨지므로,
+   일반 흐름(normal flow) 그대로 두고 버튼 자체 크기만 !important로 강제한다. */
+.st-key-logohome { line-height: 0; }
+.st-key-logohome .stButton button {
+  width: 176px !important; height: 176px !important; padding: 0 !important; border: 0 !important; box-shadow: none !important;
+  background-color: transparent !important; background-repeat: no-repeat !important; background-position: left center !important;
+  background-size: contain !important; color: transparent !important; font-size: 0 !important;
   filter: drop-shadow(0 6px 18px rgba(67, 211, 176, 0.28)); transition: transform 0.2s ease;
 }
-.st-key-logohome .cl-logohome-visual img { width: 100%; height: 100%; object-fit: contain; object-position: left center; }
-.st-key-logohome .cl-logohome-visual--text { font-size: 19px; font-weight: 800; color: var(--text); }
-.st-key-logohome:hover .cl-logohome-visual { transform: scale(1.05); }
-.st-key-logohome .stButton { position: absolute; inset: 0; z-index: 2; margin: 0; }
-.st-key-logohome .stButton > button {
-  width: 100%; height: 100%; padding: 0; border: 0; box-shadow: none;
-  background: transparent; color: transparent; font-size: 0; opacity: 0;
+.st-key-logohome .stButton button:hover {
+  background-color: transparent !important; border: 0 !important; box-shadow: none !important; transform: scale(1.05);
 }
-.st-key-logohome .stButton > button:hover { background: transparent; border: 0; box-shadow: none; }
+.st-key-logohome .stButton button * { color: transparent !important; font-size: 0 !important; }
 
 /* 쇼핑몰 배지 (구매내역) */
 .cl-site { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 8px;
@@ -893,16 +890,18 @@ def render_header() -> None:
             uri = logo_data_uri()
             if uri:
                 st.markdown(
-                    f'<div class="cl-logohome-visual"><img src="{uri}" alt="clozkin"></div>',
+                    f"<style>.st-key-logohome .stButton button "
+                    f"{{background-image: url('{uri}') !important;}}</style>",
                     unsafe_allow_html=True,
                 )
             else:
                 st.markdown(
-                    '<div class="cl-logohome-visual cl-logohome-visual--text">clozkin</div>',
+                    "<style>.st-key-logohome .stButton button "
+                    "{color: var(--text) !important; font-size: 19px !important; "
+                    "font-weight: 800;}</style>",
                     unsafe_allow_html=True,
                 )
-            st.button("clozkin 홈", key="btn_logo_home", on_click=set_nav, args=("home",),
-                      help="홈으로")
+            st.button("clozkin 홈", key="btn_logo_home", on_click=set_nav, args=("home",))
     with top_r:
         with st.container(key="logout"):
             st.button("로그아웃", key="btn_logout", on_click=_logout,
