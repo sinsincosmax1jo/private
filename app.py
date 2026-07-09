@@ -774,7 +774,12 @@ CUSTOM_CSS = """
 }
 .st-key-bottomnav > div { width: 100%; }
 .st-key-bottomnav [data-testid="stVerticalBlock"] { width: 100%; }
-.st-key-bottomnav [data-testid="stHorizontalBlock"] { width: 100%; margin: 0 auto; gap: 6px; }
+.st-key-bottomnav [data-testid="stHorizontalBlock"] {
+  width: 100%; margin: 0 auto; gap: 6px; flex-direction: column;
+}
+.st-key-bottomnav [data-testid="stHorizontalBlock"] [data-testid="column"] {
+  width: 100% !important; flex: 1 1 auto !important; min-width: 0 !important;
+}
 .st-key-bottomnav .stButton > button {
   border: 0; background: transparent; color: var(--muted);
   font-weight: 700; font-size: 13px; border-radius: 12px; box-shadow: none;
