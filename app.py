@@ -452,9 +452,8 @@ html, body { background: #05070a; }
     linear-gradient(180deg, #0b0e13 0%, #070a0e 100%);
   max-width: 430px;
   margin: 0 auto;
-  height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
+  min-height: 100vh;
+  box-sizing: border-box;
   border-radius: 44px;
   border: 3px solid var(--accent);
   box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.35), 0 0 30px 6px rgba(67, 211, 176, 0.45);
