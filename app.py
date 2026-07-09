@@ -926,14 +926,12 @@ CUSTOM_CSS = """
 }
 .stTextInput input:focus, .stNumberInput input:focus { border-color: var(--accent); box-shadow: none; }
 
-/* 카메라 프리뷰를 거울(좌우반전) 모드로 - 셀피처럼 자연스럽게 */
-.stApp [data-testid="stCameraInput"] video { transform: scaleX(-1); }
-/* 얼굴 크기 가이드 - 카메라 프리뷰 위에 점선 원 오버레이 */
+/* 얼굴 크기 가이드 - 카메라 프리뷰 위에 얼굴 형태 점선 오버레이 */
 .stApp [data-testid="stCameraInput"] div:has(> video) { position: relative; }
 .stApp [data-testid="stCameraInput"] div:has(> video)::after {
   content: ""; position: absolute; inset: 0; margin: auto;
   width: 56%; height: 80%; border: 3px dashed rgba(94, 234, 212, 0.9);
-  border-radius: 50%; pointer-events: none;
+  border-radius: 46% 46% 40% 40% / 58% 58% 46% 46%; pointer-events: none;
   box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.18);
 }
 
