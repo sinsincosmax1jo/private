@@ -245,7 +245,7 @@ _CONCERN_TO_INGREDIENT = {
 def random_diagnose(age: int, moisture: str = "보통", tone: str = "보통",
                     flush: bool = False, extra: list | None = None) -> dict:
     """나이 + 사용자가 체크한 피부 상태로 진단 결과 생성. 점수는 랜덤 (데모용)."""
-    score = random.randint(61, 96)
+    score = random.randint(60, 98)  # 최소 60점 이상 보장
     skin_type = _MOISTURE_TO_TYPE.get(moisture, random.choice(_SKIN_TYPES))
 
     # 사용자가 체크한 항목을 고민으로 반영
