@@ -2,7 +2,7 @@
 clozkin - 뷰티 입문 남성을 위한 AI 스킨케어 가이드 MVP (Streamlit 버전)
 
 Streamlit Cloud 배포용. 기존 Flask 단일 파일 버전을 Streamlit으로 포팅했다.
-  - 피부 진단: 카메라/사진 업로드 -> Claude Vision 분석
+  - 피부 진단: 카메라/사진 업로드 -> 로컬 CNN 모델 분석
   - 우리 동네 피부랭킹: 진단 점수를 목업 랭킹에 반영
   - D-day 케어 모드: 이벤트 + 목표일 -> Claude가 카운트다운 루틴 생성
 
@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import anthropic
+import tensorflow as tf
 from PIL import Image
 
 try:  # 위치(GPS) 컴포넌트 - 미설치 시에도 앱이 동작하도록 가드
@@ -37,8 +38,26 @@ except Exception:  # noqa: BLE001
 
 MODEL_NAME = "claude-sonnet-5"
 LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clozkin_logo.png")
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model", "skin_cnn_model.keras")
 # 진단 기록을 누적 저장하는 파일 (사이트 전체 랭킹에 반영)
 RECORDS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skin_records.json")
+CLASS_NAMES = ["acne", "bags", "dry", "normal", "oily", "redness"]
+SKIN_TYPE_LABELS = {"dry": "건성", "normal": "중성", "oily": "지성"}
+CONCERN_LABELS = {"acne": "여드름", "bags": "다크서클/눈밑처짐", "redness": "홍조"}
+_RECOMMENDED_INGREDIENTS = {
+    ("건성", "acne"): ["세라마이드", "판테놀"],
+    ("건성", "bags"): ["히알루론산", "카페인"],
+    ("건성", "redness"): ["센텔라", "세라마이드"],
+    ("건성", None): ["히알루론산", "세라마이드"],
+    ("중성", "acne"): ["나이아신아마이드", "판테놀"],
+    ("중성", "bags"): ["히알루론산", "카페인"],
+    ("중성", "redness"): ["센텔라", "나이아신아마이드"],
+    ("중성", None): ["나이아신아마이드", "판테놀"],
+    ("지성", "acne"): ["살리실산", "나이아신아마이드"],
+    ("지성", "bags"): ["카페인", "판테놀"],
+    ("지성", "redness"): ["센텔라", "판테놀"],
+    ("지성", None): ["나이아신아마이드", "살리실산"],
+}
 
 # ---------------------------------------------------------------------------
 # 우리 동네 피부 랭킹 - 목업 데이터 (실제 서비스에서는 DB에서 조회)
@@ -124,6 +143,8 @@ LOCAL_PRODUCTS = {
              ("센카 퍼펙트 휩 클렌징폼", "산뜻하게 유분 정리해주는 클렌저")],
     "건성": [("라운드랩 자작나무 수분 크림", "속건조 잡아주는 고보습 크림"),
              ("토리든 다이브인 세럼", "가볍게 수분 채워주는 히알루론산 세럼")],
+    "중성": [("아누아 어성초 77 토너", "피부 밸런스를 안정적으로 잡아주는 토너"),
+             ("라운드랩 자작나무 수분 크림", "무난하게 수분·유분 밸런스를 맞춰주는 크림")],
     "민감성": [("라로슈포제 시카플라스트 밤 B5", "붉은기·자극 빠르게 진정"),
                ("아누아 어성초 77 토너", "순하게 진정시키는 저자극 토너")],
     "복합성": [("아누아 어성초 77 토너", "T존 유분·볼 건조 밸런스 잡기"),
@@ -174,7 +195,8 @@ def nearby_points(lat: float, lon: float) -> "pd.DataFrame":
 
 def recommend_products(diagnosis: dict) -> list[dict]:
     """진단 결과(피부 타입)에 맞춘 추천 제품 목록. 이벤트 대비 선크림 포함."""
-    items = LOCAL_PRODUCTS.get(diagnosis.get("skin_type", ""), LOCAL_PRODUCTS["복합성"])
+    skin_type = diagnosis.get("skin_type", "")
+    items = LOCAL_PRODUCTS.get(skin_type, LOCAL_PRODUCTS.get("중성", LOCAL_PRODUCTS["복합성"]))
     picks = [{"name": n, "reason": why} for n, why in items]
     picks.append({"name": "라로슈포제 안뗄리오스 선크림",
                   "reason": "자외선 차단은 피부 관리의 기본이에요"})
@@ -198,6 +220,79 @@ def get_api_key() -> str | None:
 @st.cache_resource(show_spinner=False)
 def get_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
+
+
+@st.cache_resource(show_spinner=False)
+def load_skin_model():
+    return tf.keras.models.load_model(MODEL_PATH)
+
+
+def diagnose_skin(image_bytes: bytes) -> dict:
+    """업로드된 이미지 바이트를 로컬 CNN 모델로 분석해 진단 결과를 반환한다."""
+    image = Image.open(BytesIO(image_bytes)).convert("RGB").resize((224, 224))
+    image_array = np.array(image, dtype=np.float32)
+    image_array = np.expand_dims(image_array, axis=0)
+
+    model = load_skin_model()
+    probs = np.asarray(model.predict(image_array, verbose=0)[0], dtype=np.float32)
+
+    skin_probs = {
+        "dry": float(probs[2]),
+        "normal": float(probs[3]),
+        "oily": float(probs[4]),
+    }
+    skin_type_key = max(skin_probs, key=skin_probs.get)
+    skin_type = SKIN_TYPE_LABELS[skin_type_key]
+
+    concern_candidates = [
+        ("acne", float(probs[0])),
+        ("bags", float(probs[1])),
+        ("redness", float(probs[5])),
+    ]
+    concern_candidates.sort(key=lambda item: item[1], reverse=True)
+    active_concerns = [
+        CONCERN_LABELS[name]
+        for name, probability in concern_candidates
+        if probability >= 0.3
+    ]
+    highest_concern = next(
+        (name for name, probability in concern_candidates if probability >= 0.3),
+        None,
+    )
+
+    # 6개 클래스 확률을 기반으로 점수를 계산한다.
+    # 트러블·홍조·다크서클은 낮게, 정상 상태는 높게 반영한다.
+    class_weights = {
+        "acne": -0.35,
+        "bags": -0.20,
+        "dry": -0.10,
+        "normal": 0.15,
+        "oily": -0.10,
+        "redness": -0.20,
+    }
+    weighted_score = sum(
+        class_weights[name] * float(prob)
+        for name, prob in zip(CLASS_NAMES, probs)
+    ) * 100
+    score = int(np.clip(100 + weighted_score, 0, 100))
+
+    if active_concerns:
+        summary = f"{skin_type} 피부이며 {', '.join(active_concerns)} 경향이 보여요"
+    else:
+        summary = f"{skin_type} 피부로 특별한 트러블 없이 안정적인 상태예요"
+
+    ingredient_key = (skin_type, highest_concern)
+    recommended_ingredients = _RECOMMENDED_INGREDIENTS.get(ingredient_key)
+    if recommended_ingredients is None:
+        recommended_ingredients = _RECOMMENDED_INGREDIENTS.get((skin_type, None), ["히알루론산", "세라마이드"])
+
+    return {
+        "score": score,
+        "skin_type": skin_type,
+        "concerns": active_concerns,
+        "summary": summary,
+        "recommended_ingredients": recommended_ingredients,
+    }
 
 
 @st.cache_data(show_spinner=False)
@@ -944,14 +1039,14 @@ def render_age_diagnosis() -> None:
         st.session_state.show_camera = True
         st.session_state.pop("last_diagnosis", None)  # 새 진단 시작 - 이전 결과 초기화
 
-    # 진단 버튼을 누르면 카메라가 뜨고, 촬영하면 체크값 + 랜덤 점수로 결과를 낸다.
+    # 진단 버튼을 누르면 카메라가 뜨고, 촬영한 이미지로 로컬 CNN 모델이 결과를 만든다.
     if st.session_state.get("show_camera"):
         st.caption("📸 얼굴이 잘 보이도록 정면에서 촬영해주세요.")
         shot = st.camera_input("피부 촬영", label_visibility="collapsed")
         if shot is not None:
             with st.spinner("AI가 피부를 분석하는 중이에요..."):
-                time.sleep(3)
-            result = random_diagnose(int(age), moisture, tone, flush, extra)
+                image_bytes = shot.getvalue() if hasattr(shot, "getvalue") else shot
+                result = diagnose_skin(image_bytes)
             st.session_state.last_diagnosis = result
             # 진단 기록을 사이트 전체에 누적 저장 (랭킹에 반영)
             rec_id = time.time_ns()
@@ -959,7 +1054,7 @@ def render_age_diagnosis() -> None:
                 "id": rec_id,
                 "name": mask_name(st.session_state.get("user_name", "")),
                 "score": result["score"],
-                "gain": result["gain"],
+                "gain": max(2, min(16, 100 - result["score"])),
                 "product": (result.get("recommended_ingredients") or ["-"])[0],
             })
             st.session_state.my_record_id = rec_id
