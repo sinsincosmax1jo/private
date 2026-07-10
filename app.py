@@ -2208,15 +2208,19 @@ def render_ranking() -> None:
 
     # === 탭 1) 피부 점수 랭킹 (나이대 필터 + 점수순/턴오버순 하위 탭) ===
     with tab_people:
-        groups = ["전체", "10대", "20대", "30대", "40대", "50대 이상"]
+        # 나이 구분: 전체 / 10~20대 / 30~40대 / 50대 이상
+        groups = ["전체", "10~20대", "30~40대", "50대 이상"]
+        _group_bands = {
+            "10~20대": ("10대", "20대"),
+            "30~40대": ("30대", "40대"),
+            "50대 이상": ("50대", "60대", "70대", "80대", "90대"),
+        }
         picked = st.radio("나이대", groups, horizontal=True, label_visibility="collapsed")
 
         def _in_group(e: dict) -> bool:
             if picked == "전체":
                 return True
-            if picked == "50대 이상":
-                return e.get("age_group") in ("50대", "60대", "70대", "80대", "90대")
-            return e.get("age_group") == picked
+            return e.get("age_group") in _group_bands.get(picked, ())
 
         view = [e for e in board if _in_group(e)]
         sub_score, sub_gain = st.tabs(["🏆 점수순", "📈 턴오버순"])
