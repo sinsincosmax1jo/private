@@ -251,12 +251,12 @@ MOCK_REGIONS = [
     {"name": "제주", "count": 41, "x": 31, "y": 90},
 ]
 
-# 우리 동네(성남시 분당·판교) 동별 피부 우수자 수 - 목업 데이터
+# 우리 동네(성남시 분당·판교) 동별 피부 우수자 수 - 목업 데이터 (삼평동 1등)
 MOCK_DONGS = [
+    {"name": "삼평동", "count": 142},
     {"name": "정자동", "count": 128},
     {"name": "판교동", "count": 116},
     {"name": "서현동", "count": 99},
-    {"name": "삼평동", "count": 88},
     {"name": "수내동", "count": 81},
     {"name": "이매동", "count": 67},
     {"name": "야탑동", "count": 59},
@@ -1533,6 +1533,27 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
 .cl-map__pin--top .cl-map__cnt { color: var(--accent-2); font-size: 15px; }
 .cl-map__pin--top .cl-map__label { color: var(--accent-2); }
 
+/* ---- 성남시 순위 달리기 대결 트랙 ---- */
+.cl-race { position: relative; border-radius: 20px; padding: 14px 12px 10px; margin: 4px 0 4px;
+  overflow: hidden; border: 1px solid var(--glass-brd);
+  background: linear-gradient(160deg, #0f1822, #0b1016); }
+.cl-race__lane { position: relative; height: 58px; margin-bottom: 6px;
+  border-bottom: 2px dashed rgba(255,255,255,0.10); }
+.cl-race__lane:last-of-type { border-bottom: 0; }
+.cl-race__runner { position: absolute; bottom: 2px; transform: translateX(-50%);
+  text-align: center; transition: left 0.6s ease; z-index: 2; }
+.cl-race__runner img { width: 42px; height: auto; image-rendering: pixelated; display: block;
+  margin: 0 auto; animation: cl-race-run 0.5s ease-in-out infinite; }
+.cl-race__runner.is-me img { filter: drop-shadow(0 0 10px var(--accent)) !important; }
+.cl-race__name { font-size: 10px; font-weight: 700; color: var(--muted); margin-top: 1px;
+  white-space: nowrap; }
+.cl-race__runner.is-me .cl-race__name { color: var(--accent); }
+/* 결승선 + 깃발 (오른쪽) */
+.cl-race__finish { position: absolute; right: 30px; top: 8px; bottom: 8px;
+  border-left: 3px dashed var(--accent-2); z-index: 1; }
+.cl-race__flag { position: absolute; right: 8px; top: 6px; font-size: 22px; z-index: 3; }
+@keyframes cl-race-run { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+
 /* AI 피부 분석 중(st.spinner) 로딩 원형 아이콘을 민트색으로 */
 .stApp [data-testid="stSpinner"] .ewh6kot0 {
   border-color: rgba(67, 211, 176, 0.22) !important;
@@ -1665,6 +1686,10 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   .cl-map { max-height: 360px; }
   .cl-map__cnt { font-size: 12px; }
   .cl-map__label { font-size: 10px; }
+  /* 달리기 대결 트랙 - 모바일 축소 */
+  .cl-race__lane { height: 50px; }
+  .cl-race__runner img { width: 36px; }
+  .cl-race__name { font-size: 9px; }
   .cl-splash__max { width: 104px; }
   .cl-splash__msg { font-size: 14px; }
   /* 랭킹 줄 + 닉네임/타입 칩 - 좁은 화면에서 잘리지 않게 */
@@ -2079,7 +2104,7 @@ def render_skin_map() -> None:
     st.markdown('<div class="cl-sec">SKIN MAP</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">피부 좋은 남자들, 어디 많을까?</div>', unsafe_allow_html=True)
 
-    tab_nation, tab_dong = st.tabs(["🗺️ 전국", "🏘️ 우리 동네"])
+    tab_nation, tab_dong, tab_race = st.tabs(["🗺️ 전국", "🏘️ 우리 동네", "🏃 내 순위"])
 
     # --- 탭 1) 전국 지도 (기존) ---
     with tab_nation:
@@ -2130,6 +2155,51 @@ def render_skin_map() -> None:
                 f'</div>',
                 unsafe_allow_html=True,
             )
+
+    # --- 탭 3) 성남시에서 내 순위 (max 달리기 대결) ---
+    with tab_race:
+        diag = st.session_state.get("last_diagnosis")
+        if not diag:
+            st.info("먼저 피부 진단을 받으면 성남시에서 내 순위를 달리기 대결로 보여드려요! 🏃")
+            st.button("진단하러 가기", type="primary", use_container_width=True,
+                      on_click=set_nav, args=("diagnose",), key="race_goto_diag")
+        else:
+            my_score = int(diag.get("score", 0))
+            seongnam_total = sum(d["count"] for d in MOCK_DONGS)  # 성남시 참여자(목업)
+            # 점수가 높을수록 앞 순위. 결정적으로 계산.
+            my_rank = min(seongnam_total,
+                          max(1, round((100 - my_score) / 100 * seongnam_total) + 1))
+            st.caption("성남시 피부왕들과 달리기 대결! 점수가 높을수록 결승선에 가까워요 🏃")
+            st.markdown(
+                f'<div class="cl-status-wrap"><div class="cl-status">'
+                f'🏃 성남시 <b>{my_rank}등</b> / {seongnam_total:,}명</div></div>',
+                unsafe_allow_html=True,
+            )
+            slime = slime_data_uri(120)
+            # 라이벌은 내 점수 기준 앞뒤로 배치해 '대결' 느낌을 준다.
+            runners = [
+                ("🥊 판교 물광남", min(99, my_score + 7), False, 150),
+                (f"나 ({my_rank}등)", my_score, True, 0),
+                ("정자동 꿀피부", max(38, my_score - 6), False, 60),
+            ]
+            lanes = ""
+            for name, score, me, hue in runners:
+                prog = 8 + round(max(0, min(100, score)) / 100 * 72)  # 8~80%
+                hue_style = f"filter:hue-rotate({hue}deg);" if hue else ""
+                icon = (f'<img src="{slime}" style="{hue_style}">' if slime
+                        else '<div style="font-size:30px">🫧</div>')
+                lanes += (
+                    f'<div class="cl-race__lane">'
+                    f'<div class="cl-race__runner{" is-me" if me else ""}" style="left:{prog}%">'
+                    f'{icon}<div class="cl-race__name">{name}</div></div></div>'
+                )
+            st.markdown(
+                f'<div class="cl-race">{lanes}'
+                f'<div class="cl-race__finish"></div>'
+                f'<div class="cl-race__flag">🏁</div></div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(f"내 점수 {my_score}점 · 28일 뒤 다시 진단하면 순위가 쭉쭉 올라가요!")
 
 
 def _person_row(rank: int, entry: dict, value_html: str, key_prefix: str = "") -> None:
