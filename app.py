@@ -2130,12 +2130,14 @@ def render_ranking() -> None:
         unsafe_allow_html=True,
     )
 
-    # 내 현재 순위 (전체 기준, 나이대 필터와 무관하게 항상 보여준다)
+    # 내 현재 순위 + 상위 몇 % (전체 기준, 나이대 필터와 무관하게 항상 보여준다)
     my_rank, total = my_score_rank(board)
     if my_rank:
+        top_pct = max(1, round(my_rank / total * 100))  # 최소 1%로 표기
         st.markdown(
             f'<div class="cl-status-wrap"><div class="cl-status">'
-            f'<b>내 순위 {my_rank}위</b> / 전체 {total}명 중</div></div>',
+            f'<b>내 순위 {my_rank}위</b> / {total}명 중 · '
+            f'<b>상위 {top_pct}%</b> 🎯</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -2457,7 +2459,8 @@ def render_rewards_screen() -> None:
 
     board = build_ranking_board()
     my_rank, total = my_score_rank(board)
-    rank_text = f"우리 동네 랭킹 {my_rank}위 / 전체 {total}명 중" if my_rank else "아직 피부 진단 기록이 없어요"
+    rank_text = (f"우리 동네 랭킹 {my_rank}위 · 상위 {max(1, round(my_rank / total * 100))}%"
+                 if my_rank else "아직 피부 진단 기록이 없어요")
 
     st.markdown(
         f'<div class="cl-result">'
