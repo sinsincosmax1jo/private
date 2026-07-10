@@ -184,6 +184,17 @@ def real_product_for(seed_text: str, current: str | None) -> str:
     seed = sum(ord(c) for c in (seed_text or "")) or 1
     return _HISTORY_POOL[seed % len(_HISTORY_POOL)]
 
+
+# 마이페이지 나이대 드롭다운 / 기록 랜덤 나이대에 쓰는 나이대 목록
+AGE_GROUPS = ["10대", "20대", "30대", "40대", "50대", "60대 이상"]
+
+
+def random_age_group(seed_text: str) -> str:
+    """나이대가 없는 기존 기록에 결정적으로 랜덤 나이대를 배정한다 (20~40대 위주)."""
+    seed = sum(ord(c) for c in (seed_text or "")) or 1
+    weighted = ["10대", "20대", "20대", "30대", "30대", "40대", "40대", "50대"]
+    return weighted[seed % len(weighted)]
+
 # 구매 내역 - 목업 데이터 (남성용 화장품 / 여러 쇼핑몰)
 MOCK_PURCHASES = [
     {"site": "올리브영", "product": "라운드랩 자작나무 수분 크림", "date": "2026-06-28", "price": 19800},
@@ -1134,9 +1145,14 @@ CUSTOM_CSS = """
 .st-key-chatcard [data-testid="stVerticalBlock"] { gap: 8px; }
 /* 토글 버튼(FAB) - 열림/닫힘 공통. position:relative로 두어 max 이미지를 버튼 위에 겹친다. */
 .st-key-chat_fab { position: relative; width: 58px; margin-left: auto; }
-/* 닫힘 상태: 버튼 위에 얹는 max 캐릭터 이미지 (클릭은 아래 버튼으로 통과) */
-.cl-fab-max { position: absolute; top: 0; left: 0; width: 58px; height: 58px;
-  object-fit: cover; border-radius: 16px; pointer-events: none; z-index: 5; }
+/* 내부 요소 컨테이너는 static으로 두어, 오버레이가 .st-key-chat_fab 기준으로 겹치게 한다 */
+.st-key-chat_fab [data-testid="stElementContainer"] { position: static; }
+/* 닫힘 상태: 버튼 위에 정확히 겹치는 max 캐릭터 오버레이 (클릭은 아래 버튼으로 통과) */
+.cl-fab-over { position: absolute; top: 0; left: 0; width: 58px; height: 58px;
+  pointer-events: none; z-index: 5; }
+.cl-fab-over img { width: 58px; height: 58px; object-fit: cover; border-radius: 16px;
+  border: 1px solid rgba(67,211,176,0.7); background: #0a0d10;
+  box-shadow: 0 12px 30px rgba(67,211,176,0.4); }
 .st-key-chat_fab .stButton > button {
   width: 58px; height: 58px; border-radius: 16px; padding: 0;
   font-size: 24px; line-height: 1; font-weight: 700;
@@ -1345,10 +1361,16 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   background: transparent; border: 0; border-radius: 12px; margin: 0; padding: 8px 6px;
 }
 [class*="st-key-rankrow_"] .cl-rank.is-me { background: var(--accent-dim); box-shadow: none; }
-[class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 4px; align-items: center; }
-/* 주문서 팝오버 열 - 세로 가운데 정렬해서 구매(쇼핑백)·최저가 아이콘과 높이를 맞춘다 */
+/* 3개 컬럼(정보 / 쇼핑아이콘 / 주문서)을 세로 가운데로 정렬해 한 줄처럼 보이게 한다 */
+[class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 2px; align-items: center; }
+[class*="st-key-rankrow_"] [data-testid="stColumn"] { align-self: center; }
+/* 구매(쇼핑백+최저가) 컬럼 - 아이콘 그룹 가운데 정렬 */
+[class*="st-key-rankrow_"] [data-testid="stColumn"]:nth-child(2) { display: flex;
+  align-items: center; justify-content: center; }
+[class*="st-key-rankrow_"] [data-testid="stColumn"]:nth-child(2) .cl-shop-group { gap: 6px; }
+/* 주문서 팝오버 열 - 세로 가운데 정렬해서 쇼핑백·최저가 아이콘과 높이를 맞춘다 */
 [class*="st-key-rankrow_"] [data-testid="stColumn"]:last-child {
-  display: flex; align-items: center; justify-content: center; align-self: stretch; }
+  display: flex; align-items: center; justify-content: center; }
 [class*="st-key-rankrow_"] [data-testid="stColumn"]:last-child > div { width: 100%; }
 [class*="st-key-rankrow_"] [data-testid="stPopover"] { display: flex; justify-content: center; }
 /* 주문서 버튼을 쇼핑백·최저가(38px 정사각) 아이콘과 동일 규격으로 맞춰 3개 정렬 통일 */
@@ -1502,7 +1524,7 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   .st-key-chatwidget { right: 14px; bottom: 82px; }
   .st-key-chat_fab { width: 52px; }
   .st-key-chat_fab .stButton > button { width: 52px; height: 52px; font-size: 22px; }
-  .cl-fab-max { width: 52px; height: 52px; }
+  .cl-fab-over, .cl-fab-over img { width: 52px; height: 52px; }
   .cl-chat-body { max-height: 42vh; }
   .cl-faceid { font-size: 12.5px; padding: 11px 13px; }
   .cl-prank { padding: 12px 13px; gap: 10px; }
@@ -1929,11 +1951,12 @@ def render_skin_map() -> None:
 
 
 def _person_row(rank: int, entry: dict, value_html: str, key_prefix: str = "") -> None:
-    """랭킹 한 줄 렌더. value_html 자리에 점수 또는 상승폭을 넣는다.
-    오른쪽에 '주문서' 아이콘(팝오버)을 두어 최근 3개월 사용 화장품을 보여준다."""
+    """랭킹 한 줄 렌더 - 순위/이름/제품/점수 + 구매·최저가·주문서 아이콘까지
+    '하나의 박스' 안에 3개 컬럼(정보 / 쇼핑아이콘 / 주문서)으로 가지런히 정렬한다."""
     stype = entry.get("skin_type")
     type_chip = f'<span class="cl-typechip">{stype}</span>' if stype else ""
-    row_html = (
+    # 카드(정보) - 구매 버튼은 별도 컬럼으로 빼서 아이콘들을 한 줄로 정렬한다.
+    card_html = (
         f'<div class="cl-rank {"is-me" if entry.get("is_me") else ""}">'
         f'<div class="cl-rank__num">{rank}</div>'
         f'<div class="cl-rank__body">'
@@ -1942,12 +1965,12 @@ def _person_row(rank: int, entry: dict, value_html: str, key_prefix: str = "") -
         f'{type_chip}</div>'
         f'<div class="cl-rank__product">{entry["product"]}</div></div>'
         f'{value_html}'
-        f'{buy_buttons(entry["product"])}'
         f'</div>'
     )
     with st.container(key=f"rankrow_{key_prefix}_{rank}"):
-        col_card, col_more = st.columns([7, 1])
-        col_card.markdown(row_html, unsafe_allow_html=True)
+        col_card, col_buy, col_more = st.columns([5, 2, 1])
+        col_card.markdown(card_html, unsafe_allow_html=True)
+        col_buy.markdown(buy_buttons(entry["product"]), unsafe_allow_html=True)
         with col_more.popover("🧾", help="최근 3개월 사용 화장품"):
             st.markdown(f"**{entry['name']}** 님의 최근 3개월 사용 화장품 🧾")
             st.caption("근 3개월간 실제로 구매·사용한 제품 내역이에요.")
@@ -1974,10 +1997,17 @@ def build_ranking_board() -> list[dict]:
         nick = unique_nick(idx, used)
         used.add(nick)
         is_me = r.get("id") == my_id
+        # 나이대: 기록에 없으면(옛 데이터) 결정적 랜덤으로 채우고,
+        # 내 기록은 마이페이지에서 고른 나이대(있으면)를 우선 반영한다.
+        age_group = r.get("age_group")
+        if not age_group or age_group == "-":
+            age_group = random_age_group(str(r.get("id", orig_name)))
+        if is_me and st.session_state.get("my_age_group"):
+            age_group = st.session_state["my_age_group"]
         board.append({
             # 실명 대신 항상 '중복되지 않는' 닉네임으로 노출 (내 기록은 '(나)' 표시로 구분)
             "name": f"{nick} (나)" if is_me else nick,
-            "age_group": r.get("age_group", "-"),
+            "age_group": age_group,
             "skin_type": r.get("skin_type"),
             "score": int(r.get("score", 0)),
             "gain": int(r.get("gain", 0)),
@@ -2414,8 +2444,12 @@ def render_my_screen() -> None:
     points = st.session_state.get("reward_points", 0)
     tier = tier_for_points(points)
 
+    # 나이대 기본값: 이미 고른 값 > 진단 시 입력한 나이 > 20대
     age = st.session_state.get("diag_age")
-    age_group = f"{(int(age) // 10) * 10}대" if age else "-"
+    diag_band = f"{(int(age) // 10) * 10}대" if age else None
+    if diag_band and diag_band not in AGE_GROUPS:
+        diag_band = "60대 이상"
+    default_band = st.session_state.get("my_age_group") or diag_band or "20대"
     skin_type = diag.get("type_label") or diag.get("skin_type") or "아직 진단 전"
     score = diag.get("score")
     score_text = f"{score}점" if score is not None else "아직 진단 전"
@@ -2423,12 +2457,18 @@ def render_my_screen() -> None:
     # --- 개인정보 ---
     st.markdown('<div class="cl-sec">PROFILE</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">내 정보</div>', unsafe_allow_html=True)
-    info = [("닉네임", name), ("나이대", age_group), ("피부 타입", skin_type),
+    info = [("닉네임", name), ("피부 타입", skin_type),
             ("최근 피부 점수", score_text), ("리워드 포인트", f"{points:,}P")]
     rows = "".join(
         f'<div class="cl-info-row"><span class="cl-info-row__k">{k}</span>'
         f'<span class="cl-info-row__v">{v}</span></div>' for k, v in info)
     st.markdown(f'<div class="cl-info">{rows}</div>', unsafe_allow_html=True)
+
+    # 나이대 - 드롭다운으로 직접 선택/확인 (랭킹의 내 나이대에도 반영된다)
+    if "my_age_group" not in st.session_state:
+        st.session_state.my_age_group = default_band
+    st.selectbox("나이대", AGE_GROUPS, key="my_age_group",
+                 help="내 나이대를 선택하면 랭킹에도 반영돼요.")
 
     # --- 리워드 점수 요약 ---
     st.markdown('<div class="cl-sec">REWARD</div>', unsafe_allow_html=True)
@@ -2553,13 +2593,10 @@ def render_bottom_nav(active: str) -> None:
                        type="primary" if active == key else "secondary")
 
 
-# 빠른 질문 추천 칩 (초보자가 바로 누를 수 있는 예시 질문)
+# 빠른 질문 추천 칩 (버튼은 2개만 노출. 나머지 주제도 직접 입력하면 max가 답한다.)
 QUICK_QUESTIONS = [
     "토너·세럼 순서 알려줘",
-    "지성 피부엔 뭐부터?",
     "여드름 자국 없애는 법",
-    "면접 전날 피부 관리",
-    "자녀 결혼식 피부 관리",
 ]
 
 # max가 특정 질문에 정해진 대로 답하는 스크립트 답변 (키워드가 모두 포함되면 매칭)
@@ -2751,21 +2788,13 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
         # --- FAB 토글 버튼 (닫힌 상태에선 대표 캐릭터 max 이미지가 버튼 위에 얹힌다) ---
         with st.container(key="chat_fab"):
             max_uri = None if chat_open else question_slime_data_uri(240)
-            if max_uri:
-                # 버튼은 어두운 배경으로 두고, 그 위에 실제 <img>(검증된 방식)로 max를 겹친다.
-                st.markdown(
-                    "<style>.st-key-chat_fab .stButton>button{"
-                    "background:#0a0d10 !important;"
-                    "border:1px solid rgba(67,211,176,0.7) !important;"
-                    "box-shadow:0 12px 30px rgba(67,211,176,0.4) !important;"
-                    "font-size:0 !important;color:transparent !important;}"
-                    "</style>",
-                    unsafe_allow_html=True,
-                )
+            # 버튼을 먼저 그려 컨테이너 맨 위(top:0)에 오게 하고, 그 위에 불투명 max 이미지를
+            # 정확히 겹친다(이미지가 버튼을 완전히 덮으므로 버튼 배경 스타일은 필요 없다).
             st.button("✕" if chat_open else ("" if max_uri else "💬"), key="btn_chat_fab",
                       on_click=toggle_chat, help="max에게 물어보기 (클릭하면 챗봇이 열려요)")
             if max_uri:
-                st.markdown(f'<img class="cl-fab-max" src="{max_uri}" alt="max">',
+                # div로 감싼 오버레이(div class는 이 앱에서 안정적으로 적용됨)로 버튼 위에 겹친다
+                st.markdown(f'<div class="cl-fab-over"><img src="{max_uri}" alt="max"></div>',
                             unsafe_allow_html=True)
 
 
