@@ -133,6 +133,35 @@ MOCK_IMPROVER_PRODUCTS = [
     {"name": "토리든 다이브인 저분자 히알루론산 세럼", "category": "세럼", "avg_gain": 9},
 ]
 
+# 피부 타입별 인기 제품 랭킹 - 목업 (랭킹 탭 '타입별 인기')
+MOCK_TYPE_PRODUCTS = {
+    "지성": [
+        {"name": "이니스프리 노세범 미네랄 파우더", "category": "피지관리", "users": 842},
+        {"name": "라로슈포제 에빠끌라 토너", "category": "토너", "users": 701},
+        {"name": "파티온 노스카나인 트러블 세럼", "category": "세럼", "users": 655},
+    ],
+    "건성": [
+        {"name": "라운드랩 자작나무 수분 크림", "category": "수분크림", "users": 913},
+        {"name": "토리든 다이브인 세럼", "category": "세럼", "users": 780},
+        {"name": "에스트라 에이시카365 수분 진정 크림", "category": "진정크림", "users": 642},
+    ],
+    "복합성": [
+        {"name": "아누아 어성초 77 토너", "category": "토너", "users": 734},
+        {"name": "토리든 다이브인 세럼", "category": "세럼", "users": 690},
+        {"name": "라운드랩 자작나무 수분 크림", "category": "수분크림", "users": 611},
+    ],
+    "민감성": [
+        {"name": "라로슈포제 시카플라스트 밤 B5", "category": "밤·연고", "users": 688},
+        {"name": "닥터자르트 시카페어 토너", "category": "토너", "users": 599},
+        {"name": "에스트라 에이시카365 수분 진정 크림", "category": "진정크림", "users": 540},
+    ],
+    "수부지": [
+        {"name": "토리든 다이브인 저분자 히알루론산 세럼", "category": "세럼", "users": 720},
+        {"name": "라로슈포제 에빠끌라 토너", "category": "토너", "users": 648},
+        {"name": "에스트라 에이시카365 수분 진정 크림", "category": "진정크림", "users": 590},
+    ],
+}
+
 # 3개월 사용 화장품 내역용 제품 풀 (랭킹 유저별 주문서에 표시)
 _HISTORY_POOL = [
     "라운드랩 자작나무 수분 크림", "아누아 어성초 77 토너", "토리든 다이브인 세럼",
@@ -983,8 +1012,15 @@ CUSTOM_CSS = """
   font-family: 'Material Symbols Rounded' !important;
   word-break: normal; overflow-wrap: normal;
 }
-.block-container { max-width: 430px; margin: 0 auto; padding-top: 2.2rem; padding-bottom: 7rem; }
+/* 본문은 베젤(430px) 안쪽으로 좌우 18px 여백을 둬서 베젤 밖으로 넘치지 않게 한다 */
+.block-container { max-width: 430px; margin: 0 auto;
+  padding: 2.2rem 18px 7rem; overflow-x: clip; }
 #MainMenu, header, footer { visibility: hidden; }
+/* 스크롤바가 한쪽에만 생겨 본문이 베젤보다 왼쪽으로 치우치는 현상 방지
+   (양쪽에 동일한 스크롤바 여백을 확보해 뷰포트 정중앙 = 베젤 정중앙이 되게 한다) */
+html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+  scrollbar-gutter: stable both-edges;
+}
 
 /* ---- 브랜드 / 히어로 ---- */
 .cl-logo-wrap { display: flex; justify-content: center; margin: 4px 0 0; }
@@ -1642,12 +1678,11 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   /* 마이페이지 개인정보 카드 */
   .cl-info { padding: 4px 13px; }
   .cl-info-row { font-size: 13px; padding: 10px 0; }
-  /* 랭킹 탭 - 3개 탭이 화면 폭 안에 균등하게 들어가도록 */
-  .stApp [data-baseweb="tab-list"] { gap: 3px; }
-  .stApp [data-baseweb="tab-list"] button[role="tab"] {
-    flex: 1 1 0; min-width: 0; padding: 8px 4px; }
-  .stApp [data-baseweb="tab"] { font-size: 12.5px; }
-  .stApp [data-baseweb="tab"] p { font-size: 12.5px; margin: 0; }
+  /* 랭킹 탭 - 여러 탭(최대 5개)이 좁은 폭에도 최대한 들어가게 작게, 넘치면 가로 스크롤 */
+  .stApp [data-baseweb="tab-list"] { gap: 2px; overflow-x: auto; }
+  .stApp [data-baseweb="tab-list"] button[role="tab"] { padding: 8px 6px; min-width: 0; }
+  .stApp [data-baseweb="tab"] { font-size: 11.5px; }
+  .stApp [data-baseweb="tab"] p { font-size: 11.5px; margin: 0; white-space: nowrap; }
 }
 
 /* 아주 좁은 화면(구형 폰) 대응 - 하단 내비/랭킹 아이콘을 더 축소해 한 줄 유지 */
@@ -2116,6 +2151,16 @@ def my_score_rank(board: list[dict]) -> tuple[int | None, int]:
     return rank, len(ranked)
 
 
+def weekly_gain(entry: dict) -> int:
+    """'이번 주 급상승'용 주간 상승폭(결정적). 28일 상승폭(gain)에서 최근 7일 몫만
+    이름 해시로 안정적으로 뽑아, 새로고침해도 같은 값이 나오게 한다."""
+    g = int(entry.get("gain", 0))
+    if g <= 0:
+        return 0
+    seed = sum(ord(c) for c in entry.get("name", "")) or 1
+    return max(1, round(g * 0.5) + (seed % 3))
+
+
 def render_ranking() -> None:
     render_header()
     section_title("우리 동네 피부 랭킹", "RANKING")
@@ -2141,9 +2186,9 @@ def render_ranking() -> None:
             unsafe_allow_html=True,
         )
 
-    # 3개 랭킹을 스크롤이 아니라 탭으로 바로바로 볼 수 있게 한다.
-    tab_people, tab_used, tab_pick = st.tabs(
-        ["🏆 피부 점수", "🧴 많이 쓰는", "🚀 개선 픽"])
+    # 여러 랭킹을 스크롤이 아니라 탭으로 바로바로 볼 수 있게 한다.
+    tab_people, tab_weekly, tab_used, tab_type, tab_pick = st.tabs(
+        ["🏆 피부 점수", "🔥 주간 급상승", "🧴 인기템", "💧 타입별", "🚀 개선 픽"])
 
     # === 탭 1) 피부 점수 랭킹 (나이대 필터 + 점수순/턴오버순 하위 탭) ===
     with tab_people:
@@ -2193,7 +2238,20 @@ def render_ranking() -> None:
                             f'<div class="cl-rank__score cl-rank__gain">▲{entry.get("gain", 0)}</div>',
                             key_prefix="gain")
 
-    # === 탭 2) 많이 쓰는 화장품 랭킹 ===
+    # === 탭 2) 주간 급상승 (최근 7일 상승폭) ===
+    with tab_weekly:
+        st.caption("최근 7일간 피부 점수가 가장 많이 오른 유저예요. 🔥")
+        weekly = [e for e in board if weekly_gain(e) > 0]
+        weekly.sort(key=weekly_gain, reverse=True)
+        weekly = weekly[:10]
+        if not weekly:
+            st.caption("아직 이번 주 상승 기록이 없어요.")
+        for rank, entry in enumerate(weekly, start=1):
+            _person_row(rank, entry,
+                        f'<div class="cl-rank__score cl-rank__gain">▲{weekly_gain(entry)}</div>',
+                        key_prefix="weekly")
+
+    # === 탭 3) 많이 쓰는 화장품 랭킹 ===
     with tab_used:
         st.caption("우리 동네 남자들이 지금 가장 많이 쓰는 아이템이에요.")
         products = sorted(MOCK_PRODUCT_RANKING, key=lambda x: x["users"], reverse=True)
@@ -2213,7 +2271,32 @@ def render_ranking() -> None:
                 unsafe_allow_html=True,
             )
 
-    # === 탭 3) 개선 상승폭 큰 사람들의 픽 ===
+    # === 탭 4) 피부 타입별 인기템 ===
+    with tab_type:
+        st.caption("같은 피부 타입 남자들이 많이 쓰는 제품이에요. 내 타입을 골라보세요 💧")
+        types = list(MOCK_TYPE_PRODUCTS.keys())  # 지성/건성/복합성/민감성/수부지
+        my_type = (st.session_state.get("last_diagnosis") or {}).get("skin_type")
+        default_idx = types.index(my_type) if my_type in types else 0
+        picked_type = st.radio("피부 타입", types, index=default_idx,
+                               horizontal=True, label_visibility="collapsed")
+        tprods = MOCK_TYPE_PRODUCTS.get(picked_type, [])
+        top_u = tprods[0]["users"] if tprods else 1
+        for rank, p in enumerate(tprods, start=1):
+            pct = round(p["users"] / top_u * 100)
+            st.markdown(
+                f'<div class="cl-prank">'
+                f'<div class="cl-rank__num">{rank}</div>'
+                f'<div class="cl-prank__body">'
+                f'<div class="cl-prank__top"><span class="cl-prank__name">{p["name"]}</span>'
+                f'<span class="cl-prank__cat">{p["category"]}</span></div>'
+                f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
+                f'<div class="cl-prank__meta">{picked_type} {p["users"]:,}명 사용</div></div>'
+                f'{buy_buttons(p["name"])}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    # === 탭 5) 개선 상승폭 큰 사람들의 픽 ===
     with tab_pick:
         st.caption("피부 점수가 가장 많이 오른 사람들이 즐겨 쓰는 아이템이에요. 🚀")
         improvers = sorted(MOCK_IMPROVER_PRODUCTS, key=lambda x: x["avg_gain"], reverse=True)
@@ -2776,8 +2859,8 @@ def render_community_screen() -> None:
 def render_bottom_nav(active: str) -> None:
     """하단 고정 탭 내비게이션. 홈을 가운데에 두고 좌우로 배치한다 (구매내역은 MY에서만).
     아이콘 위 + 작은 글자 아래로 쌓아, 웹·모바일 모두 화면 폭 안에 5칸이 들어가게 한다."""
-    items = [("ranking", "🏆", "랭킹"), ("diagnose", "📷", "진단"),
-             ("home", "🏠", "홈"), ("match", "⚔️", "매치"),
+    items = [("ranking", "🏆", "랭킹"), ("match", "⚔️", "매치"),
+             ("home", "🏠", "홈"), ("diagnose", "📷", "진단"),
              ("community", "💬", "커뮤니티")]
     with st.container(key="bottomnav"):
         cols = st.columns(len(items))
