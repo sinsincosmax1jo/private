@@ -1438,7 +1438,8 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   filter: drop-shadow(0 18px 34px rgba(67,211,176,0.4));
   animation: cl-float 2.4s ease-in-out infinite; }
 .cl-splash__msg { z-index: 2; color: var(--text); font-weight: 700; font-size: 15px;
-  letter-spacing: -0.2px; }
+  letter-spacing: -0.2px; text-align: center; max-width: 82vw; padding: 0 16px;
+  line-height: 1.45; word-break: keep-all; }
 .cl-splash__msg::after { content: ""; }
 .cl-splash__bubbles { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 .cl-bubble { position: absolute; bottom: -40px; border-radius: 2px;
