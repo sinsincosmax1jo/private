@@ -143,6 +143,35 @@ _HISTORY_POOL = [
     "우르오스 스킨워시 클렌저",
 ]
 
+# 기존 진단 기록(실명/게스트 등)을 노출할 때 씌우는 닉네임 풀. 이름을 해시해
+# 항상 같은 닉네임이 나오도록 하고, 랭킹에는 실명이 절대 보이지 않게 한다.
+_RECORD_NICKS = [
+    "역삼동 뽀샤시", "망원동 촉촉남", "구의동 맑은결", "신촌 유리알", "종로 도자기",
+    "왕십리 광채남", "목동 꿀피부", "관악 무결점", "동탄 물광남", "송파 반짝이",
+    "노원 클린페이스", "은평 뽀송남", "마포 개운한피부", "강서 산뜻남", "성북 정돈남",
+    "중랑 안정피부", "금천 생기남", "도봉 투명피부", "용산 밸런스남", "양천 청결남",
+]
+# 바(bare) 성분명 - 기록의 product가 이런 성분명이면 실제 제품명으로 치환한다.
+_BARE_INGREDIENTS = {
+    "히알루론산", "나이아신아마이드", "센텔라", "비타민C", "세라마이드", "판테놀",
+    "어성초", "마데카소사이드", "살리실산", "카페인", "중성", "-", "",
+}
+
+
+def nickify_name(name: str) -> str:
+    """실명/게스트 등 어떤 이름이든 해시해 결정적으로 닉네임을 배정한다."""
+    seed = sum(ord(c) for c in (name or "")) or 1
+    return _RECORD_NICKS[seed % len(_RECORD_NICKS)]
+
+
+def real_product_for(seed_text: str, current: str | None) -> str:
+    """기록의 product가 성분명이거나 비어 있으면 실제 제품명으로 바꿔서 반환한다."""
+    prod = (current or "").strip()
+    if prod and prod not in _BARE_INGREDIENTS:
+        return prod
+    seed = sum(ord(c) for c in (seed_text or "")) or 1
+    return _HISTORY_POOL[seed % len(_HISTORY_POOL)]
+
 # 구매 내역 - 목업 데이터 (남성용 화장품 / 여러 쇼핑몰)
 MOCK_PURCHASES = [
     {"site": "올리브영", "product": "라운드랩 자작나무 수분 크림", "date": "2026-06-28", "price": 19800},
@@ -1274,18 +1303,15 @@ CUSTOM_CSS = """
 /* 카메라 프리뷰 + 촬영된 사진 모두 거울(좌우반전) 모드로 - 셀피처럼 자연스럽게 */
 .stApp [data-testid="stCameraInput"] video,
 .stApp [data-testid="stCameraInput"] img { transform: scaleX(-1); }
-/* 얼굴 가이드 - 카메라 프리뷰 중앙에 '사람(머리+어깨)' 형태의 점선 오버레이.
-   머리 타원 + 어깨 아치를 그려 사람 실루엣처럼 보이게 한다. */
+/* 사람 가이드 - 카메라 프리뷰에 '사람(머리+어깨 상반신)' 형태의 점선 아웃라인만
+   그린다. 블러/어둡게 처리 없이 깔끔하게 가이드 선만 보이게 한다. (첨부 아이콘 참고) */
 .stApp [data-testid="stCameraInput"] div:has(> video) { position: relative; }
 .stApp [data-testid="stCameraInput"] div:has(> video)::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 420'>\
-<path fill-rule='evenodd' fill='rgba(0,0,0,0.24)' d='M0,0H300V420H0Z \
-M94,118 a56,66 0 1,0 112,0 a56,66 0 1,0 -112,0 Z \
-M-25,430 a175,205 0 1,0 350,0 a175,205 0 1,0 -350,0 Z'/>\
-<path fill='none' stroke='rgba(94,234,212,0.92)' stroke-width='4' stroke-linejoin='round' stroke-dasharray='11 9' \
-d='M94,118 a56,66 0 1,0 112,0 a56,66 0 1,0 -112,0 Z \
-M-25,430 a175,205 0 1,0 350,0 a175,205 0 1,0 -350,0 Z'/>\
+<path fill='none' stroke='rgba(94,234,212,0.95)' stroke-width='4' stroke-linejoin='round' stroke-linecap='round' stroke-dasharray='11 9' \
+d='M150,44 C198,44 224,86 224,140 C224,196 192,232 150,232 C108,232 76,196 76,140 C76,86 102,44 150,44 Z \
+M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338 42,306 C64,272 102,248 150,248 Z'/>\
 </svg>") no-repeat center / 100% 100%;
 }
 
@@ -1309,13 +1335,23 @@ M-25,430 a175,205 0 1,0 350,0 a175,205 0 1,0 -350,0 Z'/>\
 }
 [class*="st-key-rankrow_"] .cl-rank.is-me { background: var(--accent-dim); box-shadow: none; }
 [class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 4px; align-items: center; }
-[class*="st-key-rankrow_"] [data-testid="stColumn"]:last-child { display: flex; justify-content: center; }
+/* 주문서 팝오버 열 - 세로 가운데 정렬해서 구매(쇼핑백)·최저가 아이콘과 높이를 맞춘다 */
+[class*="st-key-rankrow_"] [data-testid="stColumn"]:last-child {
+  display: flex; align-items: center; justify-content: center; align-self: stretch; }
+[class*="st-key-rankrow_"] [data-testid="stColumn"]:last-child > div { width: 100%; }
+[class*="st-key-rankrow_"] [data-testid="stPopover"] { display: flex; justify-content: center; }
+/* 주문서 버튼을 쇼핑백·최저가(38px 정사각) 아이콘과 동일 규격으로 맞춰 3개 정렬 통일 */
 [class*="st-key-rankrow_"] [data-testid="stPopover"] button {
-  border: 0; background: transparent; color: var(--muted);
-  border-radius: 10px; padding: 8px 4px; min-height: 0; font-size: 18px; width: 100%;
+  width: 38px; height: 38px; min-height: 38px; padding: 0; margin: 0 auto;
+  border: 1px solid var(--glass-brd); background: var(--glass); color: var(--muted);
+  border-radius: 12px; font-size: 16px;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
 }
 [class*="st-key-rankrow_"] [data-testid="stPopover"] button:hover {
-  color: var(--accent); background: var(--accent-dim); }
+  color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+/* 팝오버 버튼의 기본 펼침 화살표(chevron)는 숨겨 아이콘만 깔끔하게 보이게 */
+[class*="st-key-rankrow_"] [data-testid="stPopover"] button svg { display: none; }
+[class*="st-key-rankrow_"] [data-testid="stPopover"] button p { margin: 0; }
 /* 팝오버 안 3개월 사용 내역 한 줄 */
 .cl-hist { display: flex; gap: 10px; align-items: baseline; padding: 7px 2px;
   border-bottom: 1px solid var(--glass-brd); font-size: 13px; }
@@ -1433,6 +1469,9 @@ M-25,430 a175,205 0 1,0 350,0 a175,205 0 1,0 -350,0 Z'/>\
 .cl-match__badge { display: inline-block; background: linear-gradient(115deg, var(--accent-2), var(--accent));
   color: var(--ink); font-weight: 800; font-size: 12.5px; letter-spacing: 1px; padding: 5px 16px;
   border-radius: 999px; margin-top: 6px; box-shadow: 0 8px 24px rgba(67,211,176,0.35); }
+/* 패배 배지 - 내가 졌을 때(상대 승) */
+.cl-match__badge--lose { background: rgba(255,90,106,0.16); color: #ff7b88;
+  box-shadow: none; border: 1px solid rgba(255,90,106,0.4); }
 .cl-match__draw { font-size: 16px; font-weight: 700; margin: 18px 0 6px; color: var(--muted); }
 
 /* ---- 모바일 대응 ---- */
@@ -1474,7 +1513,8 @@ M-25,430 a175,205 0 1,0 350,0 a175,205 0 1,0 -350,0 Z'/>\
   .cl-agechip, .cl-typechip { font-size: 9px; padding: 1px 6px; margin-left: 4px; }
   /* 주문서 팝오버 열 - 간격/버튼 축소 */
   [class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 3px; }
-  [class*="st-key-rankrow_"] [data-testid="stPopover"] button { font-size: 15px; padding: 7px 4px; }
+  [class*="st-key-rankrow_"] [data-testid="stPopover"] button {
+    width: 34px; height: 34px; min-height: 34px; border-radius: 10px; font-size: 15px; padding: 0; }
   .cl-hist__date { min-width: 66px; font-size: 10.5px; }
   .cl-hist { font-size: 12px; }
   /* 개선 상승폭 랭킹 / 많이 쓰는 랭킹 바 텍스트 */
@@ -1653,41 +1693,6 @@ def render_header() -> None:
                       use_container_width=True)
 
 
-# 사람(머리+어깨) 가이드 path (viewBox 0 0 300 420) - 카메라 블러 마스크에 재사용.
-# 머리 타원 + 어깨 타원(윗부분만 화면에 보임)을 합쳐 사람 실루엣을 만든다.
-_PERSON_PATH = (
-    "M94,118 a56,66 0 1,0 112,0 a56,66 0 1,0 -112,0 Z "
-    "M-25,430 a175,205 0 1,0 350,0 a175,205 0 1,0 -350,0 Z"
-)
-
-
-def _inject_camera_overlay() -> None:
-    """카메라 프리뷰에서 사람 가이드 '바깥'을 블러 처리하고, 블러 영역(오른쪽 위)에 max를 배치한다.
-    mask(rect - person, even-odd)로 사람 안쪽은 선명, 바깥쪽만 backdrop-filter 블러가 걸린다."""
-    # 사람 바깥만 불투명(white)한 마스크 SVG. '#' 은 data URI에서 문제되므로 색상명 사용.
-    mask_svg = (
-        "data:image/svg+xml;utf8,"
-        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 420'>"
-        "<path fill='white' fill-rule='evenodd' d='M0,0H300V420H0Z " + _PERSON_PATH + "'/></svg>"
-    )
-    max_uri = slime_data_uri(200)
-    # max는 사람 실루엣 바깥(오른쪽 위 여백)에 놓아 블러 영역 안에서 또렷하게 보이게 한다.
-    max_bg = (f'background: url("{max_uri}") no-repeat right 8% top 9% / 52px;'
-              if max_uri else "")
-    st.markdown(
-        "<style>"
-        '.stApp [data-testid="stCameraInput"] div:has(> video)::before {'
-        'content:""; position:absolute; inset:0; pointer-events:none; z-index:2;'
-        "-webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);"
-        f'-webkit-mask: url("{mask_svg}") center / 100% 100% no-repeat;'
-        f'mask: url("{mask_svg}") center / 100% 100% no-repeat;'
-        f"{max_bg}"
-        "}"
-        "</style>",
-        unsafe_allow_html=True,
-    )
-
-
 def _catbar_colors(score: int) -> tuple[str, str]:
     """카테고리 점수대에 맞는 바 그라디언트 색상 (낮을수록 앰버, 높을수록 민트)."""
     if score >= 80:
@@ -1732,8 +1737,7 @@ def render_photo_stage() -> None:
     photo = None
     if mode == "촬영하기":
         st.caption("📸 얼굴이 잘 보이도록 **정면**에서 촬영해주세요.")
-        st.caption("👤 화면의 점선 가이드 안에 얼굴을 꽉 차게 맞춰주세요. (가이드 밖은 흐리게 처리돼요)")
-        _inject_camera_overlay()
+        st.caption("👤 화면의 사람 모양 점선 가이드에 얼굴과 어깨를 맞춰주세요.")
         photo = st.camera_input("피부 촬영", label_visibility="collapsed", key="diag_camera")
     else:
         photo = st.file_uploader("얼굴 사진 업로드", type=["png", "jpg", "jpeg"],
@@ -1944,19 +1948,24 @@ def _person_row(rank: int, entry: dict, value_html: str, key_prefix: str = "") -
 
 
 def build_ranking_board() -> list[dict]:
-    """목업 + 누적된 실제 진단 기록을 합쳐 랭킹 보드를 만든다 (랭킹/리워드 화면 공용)."""
+    """목업 + 누적된 실제 진단 기록을 합쳐 랭킹 보드를 만든다 (랭킹/리워드 화면 공용).
+    기록의 이름은 모두 닉네임으로, product는 실제 제품명으로 정규화해서 노출한다."""
     records = load_records()
     my_id = st.session_state.get("my_record_id")
     board = [dict(x) for x in MOCK_RANKING]
     for r in records:
+        orig_name = r.get("nickname") or r.get("name") or "익명"
+        nick = nickify_name(orig_name)
+        is_me = r.get("id") == my_id
         board.append({
-            "name": r.get("name", "익명"),
+            # 실명 대신 항상 닉네임으로 노출 (내 기록은 '(나)' 표시로 구분)
+            "name": f"{nick} (나)" if is_me else nick,
             "age_group": r.get("age_group", "-"),
             "skin_type": r.get("skin_type"),
             "score": int(r.get("score", 0)),
             "gain": int(r.get("gain", 0)),
-            "product": r.get("product", "-"),
-            "is_me": r.get("id") == my_id,
+            "product": real_product_for(orig_name, r.get("product")),
+            "is_me": is_me,
         })
     return board
 
@@ -2015,10 +2024,17 @@ def render_ranking() -> None:
             _person_row(rank, entry,
                         f'<div class="cl-rank__score">{entry["score"]}</div>',
                         key_prefix="score")
-        if not show_all_score and len(score_sorted) > 10:
-            if st.button("더보기", key="btn_rank_score_more", use_container_width=True):
-                st.session_state.rank_show_all_score = True
-                st.rerun()
+        # 10명 초과일 때만 토글 버튼 노출 (더보기 <-> 접기)
+        if len(score_sorted) > 10:
+            if show_all_score:
+                if st.button("접기 ▲", key="btn_rank_score_less", use_container_width=True):
+                    st.session_state.rank_show_all_score = False
+                    st.rerun()
+            else:
+                if st.button(f"더보기 ▼ (+{len(score_sorted) - 10})",
+                             key="btn_rank_score_more", use_container_width=True):
+                    st.session_state.rank_show_all_score = True
+                    st.rerun()
 
     with tab_gain:
         st.caption("피부 턴오버 28일 동안 점수가 많이 오른 순이에요. (▲ 상승폭)")
@@ -2230,11 +2246,17 @@ def render_match_screen() -> None:
             f'<span class="cl-match__lose-num">{lose_num}</span> VS '
             f'<span class="cl-match__win-num">{win_num}</span>'
         )
+        # 결과 문구는 '나' 기준: 내가 이기면 WIN!, 상대가 이기면 LOSE.
+        if i_win:
+            name_html = f'<div class="cl-match__winner-name">🏆 {winner_name}</div>'
+            badge_html = '<div class="cl-match__badge">WIN!</div>'
+        else:
+            name_html = f'<div class="cl-match__winner-name">🏆 {winner_name} 승리</div>'
+            badge_html = '<div class="cl-match__badge cl-match__badge--lose">LOSE…</div>'
         st.markdown(
             f'<div class="cl-match">{_match_arena_html(my_hue, opp_hue, lose_side=lose_side)}'
             f'<div class="cl-match__score">{score_html}</div>'
-            f'<div class="cl-match__winner-name">🏆 {winner_name}</div>'
-            '<div class="cl-match__badge">WIN!</div></div>',
+            f'{name_html}{badge_html}</div>',
             unsafe_allow_html=True,
         )
 
