@@ -1611,6 +1611,11 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
 
 /* ---- 모바일 대응 ---- */
 @media (max-width: 480px) {
+  /* 동의 팝업 등 다이얼로그 버튼이 좁은 화면에서 줄바꿈되지 않게 */
+  [data-testid="stDialog"] .stButton > button, [role="dialog"] .stButton > button {
+    white-space: nowrap; font-size: 13px; padding: 9px 6px; }
+  [data-testid="stDialog"] [data-testid="stCheckbox"] label,
+  [role="dialog"] [data-testid="stCheckbox"] label { font-size: 14px; font-weight: 700; }
   .cl-match__char, .cl-match__emoji { width: 84px; height: 84px; font-size: 50px; }
   .cl-match__arena { min-height: 132px; gap: 6px; }
   .cl-match__cue span { font-size: 36px; }
