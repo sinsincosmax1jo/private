@@ -230,6 +230,53 @@ EVENT_LABELS = {
     "dating": "데이트",
 }
 
+# 커뮤니티 게시판 - 나이대별 목업 글 (type: concern 고민 / brag 자랑 / poll 투표)
+COMMUNITY_GROUPS = ["10대", "20-30대", "40-50대"]
+MOCK_COMMUNITY = {
+    "10대": [
+        {"id": "c10_1", "type": "poll", "author": "성수동 광채남", "tag": "투표",
+         "title": "학교 사진 찍는 날, 뭐 바르고 갈까?",
+         "option_a": "선크림만 가볍게", "option_b": "쿠션까지 살짝",
+         "votes_a": 58, "votes_b": 33, "comments": 6},
+        {"id": "c10_2", "type": "brag", "author": "역삼동 뽀샤시", "tag": "자랑",
+         "title": "10대 랭킹 3위 찍었습니다 🎉",
+         "body": "토너-세럼만 꾸준히 했는데 점수 84점! 다들 화이팅",
+         "likes": 41, "comments": 15},
+        {"id": "c10_3", "type": "concern", "author": "상도동 뉴비", "tag": "고민",
+         "title": "코에 좁쌀 여드름 어떡하죠?",
+         "body": "세수만 하는데 코에 좁쌀이 계속 올라와요. 뭐부터 써야 하나요?",
+         "likes": 12, "comments": 8},
+    ],
+    "20-30대": [
+        {"id": "c23_1", "type": "poll", "author": "서초동 피부왕자", "tag": "투표",
+         "title": "소개팅 전날, 새 팩 써도 될까?",
+         "option_a": "그냥 하던 것만", "option_b": "진정팩 하나 추가",
+         "votes_a": 121, "votes_b": 87, "comments": 24},
+        {"id": "c23_2", "type": "brag", "author": "잠실 반짝이", "tag": "자랑",
+         "title": "소개팅 성공했습니다 (피부 칭찬 들음)",
+         "body": "3개월 관리했더니 '피부 좋으시네요' 소리 들었어요 ㅎㅎ",
+         "likes": 96, "comments": 31},
+        {"id": "c23_3", "type": "concern", "author": "판교 개발자피부", "tag": "고민",
+         "title": "야근하면 피부가 뒤집혀요…",
+         "body": "밤샘 잦은데 트러블+칙칙함 콤보네요. 직장인 루틴 추천 좀요",
+         "likes": 33, "comments": 19},
+    ],
+    "40-50대": [
+        {"id": "c45_1", "type": "poll", "author": "목동 꿀광피부", "tag": "투표",
+         "title": "자녀 결혼식, 피부 시술 받을까?",
+         "option_a": "기본 보습·선크림만", "option_b": "가벼운 시술 받기",
+         "votes_a": 74, "votes_b": 68, "comments": 20},
+        {"id": "c45_2", "type": "concern", "author": "연남동 무결점", "tag": "고민",
+         "title": "눈가 주름·탄력 관리 뭐부터?",
+         "body": "이 나이에 시작해도 늦지 않았죠? 기본템부터 알려주세요",
+         "likes": 27, "comments": 14},
+        {"id": "c45_3", "type": "brag", "author": "구의동 맑은결", "tag": "자랑",
+         "title": "40대 턴오버 상승 1위 달성 🚀",
+         "body": "동네 랭킹에서 제일 많이 올랐대요. 꾸준함이 답입니다",
+         "likes": 52, "comments": 11},
+    ],
+}
+
 OLIVEYOUNG_SEARCH = "https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query="
 
 # 네이버 쇼핑 최저가 검색 (가격 낮은순 정렬)
@@ -1254,6 +1301,31 @@ CUSTOM_CSS = """
 .cl-hof-row--top2 { border-color: rgba(94,234,212,0.4); }
 .cl-hof-row--top3 { border-color: rgba(94,234,212,0.25); }
 
+/* ---- 커뮤니티 게시판 ---- */
+.cl-post { background: var(--glass); border: 1px solid var(--glass-brd); border-radius: 16px;
+  padding: 14px 16px; margin-bottom: 10px; text-align: left; }
+.cl-post--brag { border-color: rgba(244,193,94,0.4); background: rgba(244,193,94,0.06); }
+.cl-post--poll { border-color: rgba(67,211,176,0.4); background: var(--accent-dim); }
+.cl-post__head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.cl-post__tag { font-size: 10.5px; font-weight: 800; padding: 2px 9px; border-radius: 999px; }
+.cl-post__tag--concern { color: var(--accent); background: var(--accent-dim); }
+.cl-post__tag--brag { color: #f4c15e; background: rgba(244,193,94,0.16); }
+.cl-post__tag--poll { color: var(--ink); background: linear-gradient(115deg, var(--accent-2), var(--accent)); }
+.cl-post__author { font-size: 12px; color: var(--muted); font-weight: 600; }
+.cl-post__title { font-size: 15px; font-weight: 800; letter-spacing: -0.3px; margin: 0 0 5px; }
+.cl-post__body { font-size: 13px; color: var(--text); line-height: 1.55; margin-bottom: 9px; }
+.cl-post__meta { font-size: 11.5px; color: var(--muted); }
+/* 투표 막대 */
+.cl-poll { display: flex; flex-direction: column; gap: 7px; margin: 8px 0 10px; }
+.cl-poll__opt { position: relative; display: flex; align-items: center; padding: 9px 12px;
+  border-radius: 10px; background: rgba(255,255,255,0.05); overflow: hidden; }
+.cl-poll__opt.is-sel { box-shadow: 0 0 0 1px var(--accent) inset; }
+.cl-poll__bar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 0;
+  background: linear-gradient(90deg, rgba(67,211,176,0.35), rgba(94,234,212,0.22)); }
+.cl-poll__label { position: relative; z-index: 1; flex: 1; font-size: 13px; font-weight: 700; }
+.cl-poll__pct { position: relative; z-index: 1; font-family: 'Space Grotesk', monospace;
+  font-weight: 700; font-size: 13px; color: var(--accent); }
+
 /* ---- 구매 아이콘 버튼 (올리브영 / 최저가) ---- */
 .cl-shop-group { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .cl-shop-btn, .cl-price-btn { display: inline-flex; align-items: center; justify-content: center;
@@ -1524,6 +1596,11 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   .cl-prank { padding: 12px 13px; gap: 10px; }
   .cl-prank__name { font-size: 13px; }
   .cl-note { font-size: 12.5px; }
+  /* 커뮤니티 글 - 모바일 축소 */
+  .cl-post { padding: 12px 13px; }
+  .cl-post__title { font-size: 14px; }
+  .cl-post__body { font-size: 12.5px; }
+  .cl-poll__label, .cl-poll__pct { font-size: 12px; }
   /* 좁은 화면에선 구매 아이콘 버튼을 조금 작게·간격 좁게 해서 이름이 잘리지 않도록 */
   .cl-shop-group { gap: 6px; }
   .cl-shop-btn, .cl-price-btn { width: 34px; height: 34px; border-radius: 10px; }
@@ -2595,12 +2672,110 @@ def scroll_to_top() -> None:
     )
 
 
+def _render_poll_post(post: dict) -> None:
+    """소개팅 고민 등 투표 글 - 두 선택지 막대 + 투표 버튼(1인 1표, 세션 저장)."""
+    pid = post["id"]
+    voted = st.session_state.get(f"poll_{pid}")  # None / "a" / "b"
+    va = post["votes_a"] + (1 if voted == "a" else 0)
+    vb = post["votes_b"] + (1 if voted == "b" else 0)
+    total = max(1, va + vb)
+    pa = round(va / total * 100)
+    pb = 100 - pa
+    a_sel = " is-sel" if voted == "a" else ""
+    b_sel = " is-sel" if voted == "b" else ""
+    st.markdown(
+        f'<div class="cl-post cl-post--poll">'
+        f'<div class="cl-post__head"><span class="cl-post__tag cl-post__tag--poll">투표</span>'
+        f'<span class="cl-post__author">{html.escape(post["author"])}</span></div>'
+        f'<div class="cl-post__title">{html.escape(post["title"])}</div>'
+        f'<div class="cl-poll">'
+        f'<div class="cl-poll__opt{a_sel}"><div class="cl-poll__bar" style="width:{pa}%"></div>'
+        f'<span class="cl-poll__label">{html.escape(post["option_a"])}</span>'
+        f'<span class="cl-poll__pct">{pa}%</span></div>'
+        f'<div class="cl-poll__opt{b_sel}"><div class="cl-poll__bar" style="width:{pb}%"></div>'
+        f'<span class="cl-poll__label">{html.escape(post["option_b"])}</span>'
+        f'<span class="cl-poll__pct">{pb}%</span></div>'
+        f'</div>'
+        f'<div class="cl-post__meta">🗳️ {total}표 · 💬 {post.get("comments", 0)}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+    if voted:
+        st.caption(f"내 선택: {post['option_a'] if voted == 'a' else post['option_b']} ✓")
+    else:
+        c1, c2 = st.columns(2)
+        if c1.button(post["option_a"], key=f"pa_{pid}", use_container_width=True):
+            st.session_state[f"poll_{pid}"] = "a"
+            st.rerun()
+        if c2.button(post["option_b"], key=f"pb_{pid}", use_container_width=True):
+            st.session_state[f"poll_{pid}"] = "b"
+            st.rerun()
+
+
+def _render_community_post(post: dict) -> None:
+    """커뮤니티 글 한 개 렌더 (고민/자랑/투표)."""
+    if post.get("type") == "poll":
+        _render_poll_post(post)
+        return
+    tag = post.get("tag", "고민")
+    tag_cls = {"고민": "concern", "자랑": "brag"}.get(tag, "concern")
+    body = html.escape(post.get("body", "")).replace(chr(10), "<br>")
+    st.markdown(
+        f'<div class="cl-post cl-post--{tag_cls}">'
+        f'<div class="cl-post__head">'
+        f'<span class="cl-post__tag cl-post__tag--{tag_cls}">{tag}</span>'
+        f'<span class="cl-post__author">{html.escape(post.get("author", "익명"))}</span></div>'
+        f'<div class="cl-post__title">{html.escape(post.get("title", ""))}</div>'
+        f'<div class="cl-post__body">{body}</div>'
+        f'<div class="cl-post__meta">❤️ {post.get("likes", 0)} · 💬 {post.get("comments", 0)}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_community_screen() -> None:
+    """커뮤니티 - 나이대별(10대/20-30대/40-50대) 게시판.
+    피부 고민, 랭킹 자랑, 소개팅 투표 등 여러 유형의 글을 볼 수 있고 직접 글도 쓸 수 있다."""
+    render_header()
+    section_title("커뮤니티", "COMMUNITY")
+    st.caption("나이대별 게시판에서 피부 고민을 나누고, 자랑도 하고, 투표도 해보세요 💬")
+
+    my_nick = (st.session_state.get("user_name") or "").strip() or "익명"
+    tabs = st.tabs(COMMUNITY_GROUPS)
+    for tab, group in zip(tabs, COMMUNITY_GROUPS):
+        with tab:
+            # 글쓰기 - 팝오버 폼으로 간단히 고민 글 등록 (세션에만 저장)
+            with st.popover("✏️ 글쓰기", use_container_width=True):
+                with st.form(key=f"cform_{group}", clear_on_submit=True):
+                    ctitle = st.text_input("제목", key=f"ctitle_{group}",
+                                           placeholder="예) 지성 피부 수분크림 추천요")
+                    cbody = st.text_area("내용", key=f"cbody_{group}",
+                                         placeholder="고민 내용을 적어주세요", height=90)
+                    if st.form_submit_button("등록", type="primary",
+                                             use_container_width=True):
+                        if ctitle.strip():
+                            posts = st.session_state.setdefault(f"cposts_{group}", [])
+                            posts.insert(0, {
+                                "id": f"user_{group}_{len(posts)}", "type": "concern",
+                                "author": my_nick, "tag": "고민",
+                                "title": ctitle.strip(), "body": cbody.strip(),
+                                "likes": 0, "comments": 0,
+                            })
+                            st.rerun()
+
+            user_posts = st.session_state.get(f"cposts_{group}", [])
+            if not user_posts and not MOCK_COMMUNITY.get(group):
+                st.caption("아직 글이 없어요. 첫 글을 남겨보세요!")
+            for post in user_posts + MOCK_COMMUNITY.get(group, []):
+                _render_community_post(post)
+
+
 def render_bottom_nav(active: str) -> None:
     """하단 고정 탭 내비게이션. 홈을 가운데에 두고 좌우로 배치한다 (구매내역은 MY에서만).
     아이콘 위 + 작은 글자 아래로 쌓아, 웹·모바일 모두 화면 폭 안에 5칸이 들어가게 한다."""
     items = [("ranking", "🏆", "랭킹"), ("diagnose", "📷", "진단"),
              ("home", "🏠", "홈"), ("match", "⚔️", "매치"),
-             ("rewards", "🎁", "리워드")]
+             ("community", "💬", "커뮤니티")]
     with st.container(key="bottomnav"):
         cols = st.columns(len(items))
         for col, (key, icon, label) in zip(cols, items):
@@ -2863,13 +3038,15 @@ def main() -> None:
     need_scroll = st.session_state.get("_view_sig") != view_sig
     st.session_state._view_sig = view_sig
 
-    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단 / 매치 / 리워드), 구매내역은 MY에서만
+    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단 / 매치 / 커뮤니티), 구매·리워드는 MY에서만
     if nav == "ranking":
         render_ranking()
     elif nav == "diagnose":
         render_diagnosis_screen()
     elif nav == "match":
         render_match_screen()
+    elif nav == "community":
+        render_community_screen()
     elif nav == "my":
         render_my_screen()
     elif nav == "purchases":
