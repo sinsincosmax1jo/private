@@ -459,19 +459,10 @@ RANDOM_MATCH_NICKS = [
 
 
 def random_match_result(my_score: int) -> tuple[int, bool]:
-    """승/패를 무작위로 정하고, 그 결과와 맞아떨어지는 상대 점수를 만들어 반환한다.
-    (0점/100점처럼 반대 결과가 수학적으로 불가능한 극단값은 강제로 맞춰준다.)"""
-    if my_score <= 0:
-        i_win = False
-    elif my_score >= 100:
-        i_win = True
-    else:
-        i_win = random.random() < 0.5
-    opp_score = (
-        random.randint(0, my_score - 1) if i_win
-        else random.randint(my_score + 1, 100)
-    )
-    return opp_score, i_win
+    """상대 점수를 42~100 사이 랜덤으로 뽑고, 내 점수와 비교해 승/패를 정한다.
+    (상대방 점수는 항상 42점 이상으로 나온다.)"""
+    opp_score = random.randint(42, 100)
+    return opp_score, (my_score > opp_score)
 
 
 @st.cache_data(show_spinner=False)
@@ -1573,6 +1564,12 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   /* 마이페이지 개인정보 카드 */
   .cl-info { padding: 4px 13px; }
   .cl-info-row { font-size: 13px; padding: 10px 0; }
+  /* 랭킹 탭 - 3개 탭이 화면 폭 안에 균등하게 들어가도록 */
+  .stApp [data-baseweb="tab-list"] { gap: 3px; }
+  .stApp [data-baseweb="tab-list"] button[role="tab"] {
+    flex: 1 1 0; min-width: 0; padding: 8px 4px; }
+  .stApp [data-baseweb="tab"] { font-size: 12.5px; }
+  .stApp [data-baseweb="tab"] p { font-size: 12.5px; margin: 0; }
 }
 
 /* 아주 좁은 화면(구형 폰) 대응 - 하단 내비/랭킹 아이콘을 더 축소해 한 줄 유지 */
@@ -2046,10 +2043,12 @@ def render_ranking() -> None:
 
     board = build_ranking_board()
 
-    st.markdown('<div class="cl-sec">RANKING</div>', unsafe_allow_html=True)
-    st.markdown('<div class="cl-h">피부 점수 랭킹</div>', unsafe_allow_html=True)
-    st.caption(f"지금까지 {len(board):,}명이 진단에 참여했어요. "
-               "(진단할수록 기록이 쌓여요)")
+    # 지금까지 몇 명이 참여했는지 눈에 잘 띄게 상단에 표시
+    st.markdown(
+        f'<div class="cl-status-wrap"><div class="cl-status">'
+        f'👥 지금까지 <b>{len(board):,}명</b>이 피부 진단에 참여했어요</div></div>',
+        unsafe_allow_html=True,
+    )
 
     # 내 현재 순위 (전체 기준, 나이대 필터와 무관하게 항상 보여준다)
     my_rank, total = my_score_rank(board)
@@ -2060,97 +2059,97 @@ def render_ranking() -> None:
             unsafe_allow_html=True,
         )
 
-    # 나이대 필터
-    groups = ["전체", "10대", "20대", "30대", "40대", "50대 이상"]
-    picked = st.radio("나이대", groups, horizontal=True, label_visibility="collapsed")
+    # 3개 랭킹을 스크롤이 아니라 탭으로 바로바로 볼 수 있게 한다.
+    tab_people, tab_used, tab_pick = st.tabs(
+        ["🏆 피부 점수", "🧴 많이 쓰는", "🚀 개선 픽"])
 
-    def _in_group(e: dict) -> bool:
-        if picked == "전체":
-            return True
-        if picked == "50대 이상":
-            return e.get("age_group") in ("50대", "60대", "70대", "80대", "90대")
-        return e.get("age_group") == picked
+    # === 탭 1) 피부 점수 랭킹 (나이대 필터 + 점수순/턴오버순 하위 탭) ===
+    with tab_people:
+        groups = ["전체", "10대", "20대", "30대", "40대", "50대 이상"]
+        picked = st.radio("나이대", groups, horizontal=True, label_visibility="collapsed")
 
-    view = [e for e in board if _in_group(e)]
+        def _in_group(e: dict) -> bool:
+            if picked == "전체":
+                return True
+            if picked == "50대 이상":
+                return e.get("age_group") in ("50대", "60대", "70대", "80대", "90대")
+            return e.get("age_group") == picked
 
-    tab_score, tab_gain = st.tabs(["🏆 피부 점수 순위", "📈 턴오버 상승 순위"])
+        view = [e for e in board if _in_group(e)]
+        sub_score, sub_gain = st.tabs(["🏆 점수순", "📈 턴오버순"])
 
-    with tab_score:
-        st.caption("현재 피부 점수가 높은 순이에요.")
-        if not view:
-            st.caption("이 나이대에는 아직 기록이 없어요.")
-        score_sorted = sorted(view, key=lambda x: x["score"], reverse=True)
-        show_all_score = st.session_state.get("rank_show_all_score", False)
-        visible_count = len(score_sorted) if show_all_score else 10
-        for rank, entry in enumerate(score_sorted[:visible_count], start=1):
-            _person_row(rank, entry,
-                        f'<div class="cl-rank__score">{entry["score"]}</div>',
-                        key_prefix="score")
-        # 10명 초과일 때만 토글 버튼 노출 (더보기 <-> 접기)
-        if len(score_sorted) > 10:
-            if show_all_score:
-                if st.button("접기 ▲", key="btn_rank_score_less", use_container_width=True):
-                    st.session_state.rank_show_all_score = False
-                    st.rerun()
-            else:
-                if st.button(f"더보기 ▼ (+{len(score_sorted) - 10})",
-                             key="btn_rank_score_more", use_container_width=True):
-                    st.session_state.rank_show_all_score = True
-                    st.rerun()
+        with sub_score:
+            st.caption("현재 피부 점수가 높은 순이에요.")
+            if not view:
+                st.caption("이 나이대에는 아직 기록이 없어요.")
+            score_sorted = sorted(view, key=lambda x: x["score"], reverse=True)
+            show_all_score = st.session_state.get("rank_show_all_score", False)
+            visible_count = len(score_sorted) if show_all_score else 10
+            for rank, entry in enumerate(score_sorted[:visible_count], start=1):
+                _person_row(rank, entry,
+                            f'<div class="cl-rank__score">{entry["score"]}</div>',
+                            key_prefix="score")
+            # 10명 초과일 때만 토글 버튼 노출 (더보기 <-> 접기)
+            if len(score_sorted) > 10:
+                if show_all_score:
+                    if st.button("접기 ▲", key="btn_rank_score_less", use_container_width=True):
+                        st.session_state.rank_show_all_score = False
+                        st.rerun()
+                else:
+                    if st.button(f"더보기 ▼ (+{len(score_sorted) - 10})",
+                                 key="btn_rank_score_more", use_container_width=True):
+                        st.session_state.rank_show_all_score = True
+                        st.rerun()
 
-    with tab_gain:
-        st.caption("피부 턴오버 28일 동안 점수가 많이 오른 순이에요. (▲ 상승폭)")
-        if not view:
-            st.caption("이 나이대에는 아직 기록이 없어요.")
-        for rank, entry in enumerate(
-                sorted(view, key=lambda x: x.get("gain", 0), reverse=True), start=1):
-            _person_row(rank, entry,
-                        f'<div class="cl-rank__score cl-rank__gain">▲{entry.get("gain", 0)}</div>',
-                        key_prefix="gain")
+        with sub_gain:
+            st.caption("피부 턴오버 28일 동안 점수가 많이 오른 순이에요. (▲ 상승폭)")
+            if not view:
+                st.caption("이 나이대에는 아직 기록이 없어요.")
+            for rank, entry in enumerate(
+                    sorted(view, key=lambda x: x.get("gain", 0), reverse=True), start=1):
+                _person_row(rank, entry,
+                            f'<div class="cl-rank__score cl-rank__gain">▲{entry.get("gain", 0)}</div>',
+                            key_prefix="gain")
 
-    # --- 많이 쓰는 화장품 랭킹 ---
-    st.markdown('<div class="cl-sec">MOST USED</div>', unsafe_allow_html=True)
-    st.markdown('<div class="cl-h">많이 쓰는 화장품 랭킹</div>', unsafe_allow_html=True)
-    st.caption("우리 동네 남자들이 지금 가장 많이 쓰는 아이템이에요.")
+    # === 탭 2) 많이 쓰는 화장품 랭킹 ===
+    with tab_used:
+        st.caption("우리 동네 남자들이 지금 가장 많이 쓰는 아이템이에요.")
+        products = sorted(MOCK_PRODUCT_RANKING, key=lambda x: x["users"], reverse=True)
+        top_users = products[0]["users"]
+        for rank, p in enumerate(products, start=1):
+            pct = round(p["users"] / top_users * 100)
+            st.markdown(
+                f'<div class="cl-prank">'
+                f'<div class="cl-rank__num">{rank}</div>'
+                f'<div class="cl-prank__body">'
+                f'<div class="cl-prank__top"><span class="cl-prank__name">{p["name"]}</span>'
+                f'<span class="cl-prank__cat">{p["category"]}</span></div>'
+                f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
+                f'<div class="cl-prank__meta">{p["users"]:,}명 사용</div></div>'
+                f'{buy_buttons(p["name"])}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
-    products = sorted(MOCK_PRODUCT_RANKING, key=lambda x: x["users"], reverse=True)
-    top_users = products[0]["users"]
-    for rank, p in enumerate(products, start=1):
-        pct = round(p["users"] / top_users * 100)
-        st.markdown(
-            f'<div class="cl-prank">'
-            f'<div class="cl-rank__num">{rank}</div>'
-            f'<div class="cl-prank__body">'
-            f'<div class="cl-prank__top"><span class="cl-prank__name">{p["name"]}</span>'
-            f'<span class="cl-prank__cat">{p["category"]}</span></div>'
-            f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
-            f'<div class="cl-prank__meta">{p["users"]:,}명 사용</div></div>'
-            f'{buy_buttons(p["name"])}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-    # --- 개선 상승폭이 큰 사람들이 많이 쓰는 제품 ---
-    st.markdown('<div class="cl-sec">TOP IMPROVERS PICK</div>', unsafe_allow_html=True)
-    st.markdown('<div class="cl-h">개선 상승폭 큰 사람들의 픽</div>', unsafe_allow_html=True)
-    st.caption("피부 점수가 가장 많이 오른 사람들이 즐겨 쓰는 아이템이에요. 🚀")
-
-    improvers = sorted(MOCK_IMPROVER_PRODUCTS, key=lambda x: x["avg_gain"], reverse=True)
-    top_gain = improvers[0]["avg_gain"]
-    for rank, p in enumerate(improvers, start=1):
-        pct = round(p["avg_gain"] / top_gain * 100)
-        st.markdown(
-            f'<div class="cl-prank">'
-            f'<div class="cl-rank__num">{rank}</div>'
-            f'<div class="cl-prank__body">'
-            f'<div class="cl-prank__top"><span class="cl-prank__name">{p["name"]}</span>'
-            f'<span class="cl-prank__cat">{p["category"]}</span></div>'
-            f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
-            f'<div class="cl-prank__meta">사용자 평균 <b style="color:var(--accent)">▲{p["avg_gain"]}점</b> 상승</div></div>'
-            f'{buy_buttons(p["name"])}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    # === 탭 3) 개선 상승폭 큰 사람들의 픽 ===
+    with tab_pick:
+        st.caption("피부 점수가 가장 많이 오른 사람들이 즐겨 쓰는 아이템이에요. 🚀")
+        improvers = sorted(MOCK_IMPROVER_PRODUCTS, key=lambda x: x["avg_gain"], reverse=True)
+        top_gain = improvers[0]["avg_gain"]
+        for rank, p in enumerate(improvers, start=1):
+            pct = round(p["avg_gain"] / top_gain * 100)
+            st.markdown(
+                f'<div class="cl-prank">'
+                f'<div class="cl-rank__num">{rank}</div>'
+                f'<div class="cl-prank__body">'
+                f'<div class="cl-prank__top"><span class="cl-prank__name">{p["name"]}</span>'
+                f'<span class="cl-prank__cat">{p["category"]}</span></div>'
+                f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
+                f'<div class="cl-prank__meta">사용자 평균 <b style="color:var(--accent)">▲{p["avg_gain"]}점</b> 상승</div></div>'
+                f'{buy_buttons(p["name"])}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def render_diagnosis_screen() -> None:
@@ -2763,7 +2762,11 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
 
                 # --- D-day 케어 모드 (챗봇 기능) ---
                 with st.container(key="chat_dday"):
-                    with st.expander("📅 D-day 케어 모드"):
+                    # 직전에 '루틴 만들기'를 눌렀으면 이번 렌더에서 토글을 접는다(1회성).
+                    dday_kwargs = {}
+                    if st.session_state.pop("dday_collapse", False):
+                        dday_kwargs["expanded"] = False
+                    with st.expander("📅 D-day 케어 모드", **dday_kwargs):
                         with st.form(key="dday_form"):
                             ev = st.radio(
                                 "이벤트", list(EVENT_LABELS.keys()),
@@ -2780,6 +2783,7 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
                                 client, EVENT_LABELS.get(ev, ev), int(days))
                         st.session_state.chat_messages.append(
                             {"role": "assistant", "content": msg})
+                        st.session_state.dday_collapse = True  # 다음 렌더에서 토글 닫기
                         st.rerun()
 
                 # --- 빠른 질문 추천 칩 ---
