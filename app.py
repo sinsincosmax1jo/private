@@ -1728,30 +1728,40 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
 def _logout() -> None:
     # 로그인/로그아웃은 페이지 새로고침 없이 처리되므로(세션 유지 목적),
     # 진단 관련 상태도 여기서 같이 지워야 다음 로그인 사용자에게 남지 않는다.
-    for k in ("logged_in", "consent", "pending_login", "my_record_id",
-              "diag_stage", "diag_answers", "last_diagnosis",
-              "reward_points", "last_reward_earned", "login_loading"):
+    for k in ("logged_in", "consent", "location_consent", "pending_login",
+              "my_record_id", "diag_stage", "diag_answers", "last_diagnosis",
+              "reward_points", "last_reward_earned", "login_loading",
+              "agree_privacy", "agree_location"):
         st.session_state.pop(k, None)
     _reset_survey_answers()
 
 
-@st.dialog("개인정보 활용 동의")
+@st.dialog("서비스 이용 동의")
 def consent_dialog() -> None:
-    """로그인 시 개인정보 활용 동의 팝업 (동의/비동의)."""
-    st.markdown(
-        "더 정확한 추천을 위해 아래 개인정보를 활용해요:\n\n"
-        "- 이름·나이 등 프로필 정보\n"
-        "- 피부 진단 결과 및 피부 정보\n"
-        "- 구매 내역"
-    )
-    st.caption("동의하셔야 서비스를 이용할 수 있어요.")
+    """회원가입/비회원 시작 시 개인정보 + 위치기반 서비스 이용 동의 팝업 (모두 필수)."""
+    st.markdown("clozkin 서비스 이용을 위해 아래 <b>필수 항목</b>에 동의해주세요.",
+                unsafe_allow_html=True)
+
+    agree_privacy = st.checkbox("(필수) 개인정보 활용 동의", key="agree_privacy")
+    st.caption("이름·나이 등 프로필, 피부 진단 결과, 구매 내역을 맞춤 추천에 활용해요.")
+
+    agree_location = st.checkbox("(필수) 위치기반 서비스 이용 동의", key="agree_location")
+    st.caption("우리 동네 피부 랭킹·주변 지역 정보 제공을 위해 위치 정보를 활용해요.")
+
+    if st.session_state.get("consent") is False:
+        st.warning("필수 항목(개인정보·위치기반)에 모두 동의해야 서비스를 이용할 수 있어요.")
+
     c1, c2 = st.columns(2)
-    if c1.button("동의", type="primary", use_container_width=True):
-        st.session_state.logged_in = True
-        st.session_state.consent = True
-        st.session_state.login_loading = True  # 2초 max 로딩 (최상위 스플래시가 팝업을 덮음)
-        st.session_state.pop("pending_login", None)
-        st.rerun()
+    if c1.button("동의하고 시작", type="primary", use_container_width=True):
+        if agree_privacy and agree_location:
+            st.session_state.logged_in = True
+            st.session_state.consent = True
+            st.session_state.location_consent = True
+            st.session_state.login_loading = True  # 2초 max 로딩 (최상위 스플래시가 팝업을 덮음)
+            st.session_state.pop("pending_login", None)
+            st.rerun()
+        else:
+            st.warning("개인정보·위치기반 서비스 이용에 모두 동의해주세요.")
     if c2.button("비동의", use_container_width=True):
         st.session_state.consent = False
         st.session_state.pop("pending_login", None)
@@ -1792,13 +1802,14 @@ def render_login() -> None:
                           use_container_width=True)
 
         if st.session_state.get("consent") is False:
-            st.warning("개인정보 활용에 동의해야 서비스를 이용할 수 있어요.")
+            st.warning("개인정보·위치기반 서비스에 동의해야 서비스를 이용할 수 있어요.")
 
     if login:
         # 기존 회원 로그인은 이미 동의한 것으로 간주하고 팝업 없이 바로 입장
         st.session_state.user_name = (user_id or "").strip() or "게스트"
         st.session_state.logged_in = True
         st.session_state.consent = True
+        st.session_state.location_consent = True
         st.session_state.login_loading = True  # 로그인 시 2초 max 캐릭터 로딩
         st.session_state.pop("pending_login", None)
         st.rerun()
