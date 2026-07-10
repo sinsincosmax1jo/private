@@ -251,6 +251,18 @@ MOCK_REGIONS = [
     {"name": "제주", "count": 41, "x": 31, "y": 90},
 ]
 
+# 우리 동네(성남시 분당·판교) 동별 피부 우수자 수 - 목업 데이터
+MOCK_DONGS = [
+    {"name": "정자동", "count": 128},
+    {"name": "판교동", "count": 116},
+    {"name": "서현동", "count": 99},
+    {"name": "삼평동", "count": 88},
+    {"name": "수내동", "count": 81},
+    {"name": "이매동", "count": 67},
+    {"name": "야탑동", "count": 59},
+    {"name": "백현동", "count": 52},
+]
+
 EVENT_LABELS = {
     "date": "소개팅",
     "interview": "면접",
@@ -2063,36 +2075,61 @@ def render_result_stage() -> None:
 
 
 def render_skin_map() -> None:
-    """피부 좋은 남자들의 전국 분포를 귀여운 아이콘 지도로 보여준다 (숫자 표시)."""
+    """피부 좋은 남자들의 분포를 2개 탭으로 보여준다 - 전국 지도 / 우리 동네(성남·판교) 동별."""
     st.markdown('<div class="cl-sec">SKIN MAP</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">피부 좋은 남자들, 어디 많을까?</div>', unsafe_allow_html=True)
-    st.caption("지역별 피부 우수자 수예요. 슬라임이 클수록 피부 좋은 남자가 많아요 🫧")
 
-    slime = slime_data_uri()
-    map_uri = map_data_uri()
-    mx = max(r["count"] for r in MOCK_REGIONS)
-    ranked = sorted(MOCK_REGIONS, key=lambda x: x["count"], reverse=True)
-    pins = ""
-    for i, r in enumerate(ranked):
-        w = 30 + round(r["count"] / mx * 26)  # 30~56px (지도 위라 살짝 작게)
-        top = " cl-map__pin--top" if i == 0 else ""
-        icon = (f'<img class="cl-map__slime" src="{slime}" style="width:{w}px">'
-                if slime else
-                f'<div class="cl-map__dot" style="width:{w}px;height:{w}px"></div>')
-        pins += (
-            f'<div class="cl-map__pin{top}" style="left:{r["x"]}%;top:{r["y"]}%">'
-            f'<div class="cl-map__cnt">{r["count"]}</div>'
-            f'{icon}'
-            f'<div class="cl-map__label">{r["name"]}</div></div>'
-        )
-    # 지도 이미지가 있으면 배경으로 깔고, 없으면 그라디언트 폴백(--nomap)을 쓴다.
-    if map_uri:
-        style = f' style="background-image:url({map_uri})"'
-        cls = "cl-map"
-    else:
-        style = ""
-        cls = "cl-map cl-map--nomap"
-    st.markdown(f'<div class="{cls}"{style}>{pins}</div>', unsafe_allow_html=True)
+    tab_nation, tab_dong = st.tabs(["🗺️ 전국", "🏘️ 우리 동네"])
+
+    # --- 탭 1) 전국 지도 (기존) ---
+    with tab_nation:
+        st.caption("지역별 피부 우수자 수예요. 슬라임이 클수록 피부 좋은 남자가 많아요 🫧")
+        slime = slime_data_uri()
+        map_uri = map_data_uri()
+        mx = max(r["count"] for r in MOCK_REGIONS)
+        ranked = sorted(MOCK_REGIONS, key=lambda x: x["count"], reverse=True)
+        pins = ""
+        for i, r in enumerate(ranked):
+            w = 30 + round(r["count"] / mx * 26)  # 30~56px (지도 위라 살짝 작게)
+            top = " cl-map__pin--top" if i == 0 else ""
+            icon = (f'<img class="cl-map__slime" src="{slime}" style="width:{w}px">'
+                    if slime else
+                    f'<div class="cl-map__dot" style="width:{w}px;height:{w}px"></div>')
+            pins += (
+                f'<div class="cl-map__pin{top}" style="left:{r["x"]}%;top:{r["y"]}%">'
+                f'<div class="cl-map__cnt">{r["count"]}</div>'
+                f'{icon}'
+                f'<div class="cl-map__label">{r["name"]}</div></div>'
+            )
+        # 지도 이미지가 있으면 배경으로 깔고, 없으면 그라디언트 폴백(--nomap)을 쓴다.
+        if map_uri:
+            style = f' style="background-image:url({map_uri})"'
+            cls = "cl-map"
+        else:
+            style = ""
+            cls = "cl-map cl-map--nomap"
+        st.markdown(f'<div class="{cls}"{style}>{pins}</div>', unsafe_allow_html=True)
+
+    # --- 탭 2) 우리 동네(성남시 분당·판교) 동별 순위 ---
+    with tab_dong:
+        st.caption("우리 동네(성남시 분당·판교) 중 어떤 동에 피부 좋은 남자가 많을까요? 🏘️")
+        dongs = sorted(MOCK_DONGS, key=lambda x: x["count"], reverse=True)
+        top_cnt = dongs[0]["count"]
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        for rank, d in enumerate(dongs, start=1):
+            pct = round(d["count"] / top_cnt * 100)
+            num = medals.get(rank, str(rank))
+            st.markdown(
+                f'<div class="cl-prank">'
+                f'<div class="cl-rank__num">{num}</div>'
+                f'<div class="cl-prank__body">'
+                f'<div class="cl-prank__top"><span class="cl-prank__name">{d["name"]}</span>'
+                f'<span class="cl-prank__cat">성남시</span></div>'
+                f'<div class="cl-prank__bar"><span style="width:{pct}%"></span></div>'
+                f'<div class="cl-prank__meta">피부 우수자 {d["count"]}명</div></div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def _person_row(rank: int, entry: dict, value_html: str, key_prefix: str = "") -> None:
