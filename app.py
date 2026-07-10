@@ -1430,7 +1430,7 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
 .cl-rec__reason { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
 
 /* ---- 스플래시 (로딩/로그인) - max 캐릭터 둥둥 + 픽셀 버블 ---- */
-.cl-splash { position: fixed; inset: 0; z-index: 100000; overflow: hidden;
+.cl-splash { position: fixed; inset: 0; z-index: 2147483000; overflow: hidden;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
   background: radial-gradient(700px 500px at 50% 35%, rgba(67,211,176,0.16), transparent 60%),
     linear-gradient(160deg, #0b1016, #0f1822); }
@@ -1617,7 +1617,7 @@ def _logout() -> None:
     # 진단 관련 상태도 여기서 같이 지워야 다음 로그인 사용자에게 남지 않는다.
     for k in ("logged_in", "consent", "pending_login", "my_record_id",
               "diag_stage", "diag_answers", "last_diagnosis",
-              "reward_points", "last_reward_earned"):
+              "reward_points", "last_reward_earned", "login_loading"):
         st.session_state.pop(k, None)
     _reset_survey_answers()
 
@@ -1636,8 +1636,9 @@ def consent_dialog() -> None:
     if c1.button("동의", type="primary", use_container_width=True):
         st.session_state.logged_in = True
         st.session_state.consent = True
+        st.session_state.login_loading = True  # 2초 max 로딩 (최상위 스플래시가 팝업을 덮음)
         st.session_state.pop("pending_login", None)
-        st.rerun()  # 동의 즉시 팝업이 닫히고 바로 입장한다 (블로킹 스플래시 없음)
+        st.rerun()
     if c2.button("비동의", use_container_width=True):
         st.session_state.consent = False
         st.session_state.pop("pending_login", None)
@@ -1685,6 +1686,7 @@ def render_login() -> None:
         st.session_state.user_name = (user_id or "").strip() or "게스트"
         st.session_state.logged_in = True
         st.session_state.consent = True
+        st.session_state.login_loading = True  # 로그인 시 2초 max 캐릭터 로딩
         st.session_state.pop("pending_login", None)
         st.rerun()
     elif signup or guest:
@@ -2338,8 +2340,8 @@ def render_purchases_screen() -> None:
             unsafe_allow_html=True,
         )
         if st.button("한번에 연동하기", type="primary", use_container_width=True):
-            with st.spinner("여러 쇼핑몰 계정을 연동하는 중..."):
-                time.sleep(2)
+            render_max_loading("여러 쇼핑몰 계정을 연동하는 중...")
+            time.sleep(2)
             st.session_state.purchases_synced = True
             st.rerun()
         st.caption("데모 버전이에요. 실제 계정 연동 없이 예시 내역을 보여줍니다.")
@@ -2778,9 +2780,9 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
                             dday_submit = st.form_submit_button(
                                 "루틴 만들기", use_container_width=True)
                     if dday_submit:
-                        with st.spinner("맞춤 케어 루틴을 짜는 중..."):
-                            msg = build_dday_message(
-                                client, EVENT_LABELS.get(ev, ev), int(days))
+                        render_max_loading("max가 맞춤 케어 루틴을 짜는 중...")
+                        msg = build_dday_message(
+                            client, EVENT_LABELS.get(ev, ev), int(days))
                         st.session_state.chat_messages.append(
                             {"role": "assistant", "content": msg})
                         st.session_state.dday_collapse = True  # 다음 렌더에서 토글 닫기
@@ -2839,6 +2841,13 @@ def main() -> None:
     if not st.session_state.get("logged_in"):
         render_login()
         return
+
+    # 로그인 직후 2초 max 캐릭터 로딩 (스플래시가 최상위라 동의 팝업까지 덮으며 닫힌다)
+    if st.session_state.get("login_loading"):
+        render_max_loading("로그인 중...")
+        time.sleep(2)
+        st.session_state.login_loading = False
+        st.rerun()
 
     # 로고 이미지 클릭 등 URL(?nav=) 로 들어온 화면 전환 반영
     if "nav" in st.query_params:
