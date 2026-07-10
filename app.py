@@ -1132,8 +1132,11 @@ CUSTOM_CSS = """
   border-radius: 22px; overflow: hidden; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.62);
 }
 .st-key-chatcard [data-testid="stVerticalBlock"] { gap: 8px; }
-/* 토글 버튼(FAB) - 열림/닫힘 공통 */
-.st-key-chat_fab { display: flex; justify-content: flex-end; }
+/* 토글 버튼(FAB) - 열림/닫힘 공통. position:relative로 두어 max 이미지를 버튼 위에 겹친다. */
+.st-key-chat_fab { position: relative; width: 58px; margin-left: auto; }
+/* 닫힘 상태: 버튼 위에 얹는 max 캐릭터 이미지 (클릭은 아래 버튼으로 통과) */
+.cl-fab-max { position: absolute; top: 0; left: 0; width: 58px; height: 58px;
+  object-fit: cover; border-radius: 16px; pointer-events: none; z-index: 5; }
 .st-key-chat_fab .stButton > button {
   width: 58px; height: 58px; border-radius: 16px; padding: 0;
   font-size: 24px; line-height: 1; font-weight: 700;
@@ -1497,7 +1500,9 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   .cl-countdown__dday { font-size: 42px; }
   [class*="st-key-navbtn_"] .stButton > button p:nth-of-type(2) { font-size: 19px; }
   .st-key-chatwidget { right: 14px; bottom: 82px; }
+  .st-key-chat_fab { width: 52px; }
   .st-key-chat_fab .stButton > button { width: 52px; height: 52px; font-size: 22px; }
+  .cl-fab-max { width: 52px; height: 52px; }
   .cl-chat-body { max-height: 42vh; }
   .cl-faceid { font-size: 12.5px; padding: 11px 13px; }
   .cl-prank { padding: 12px 13px; gap: 10px; }
@@ -1597,9 +1602,8 @@ def consent_dialog() -> None:
     if c1.button("동의", type="primary", use_container_width=True):
         st.session_state.logged_in = True
         st.session_state.consent = True
-        st.session_state.login_loading = True  # 로그인 스플래시(5초) 트리거
         st.session_state.pop("pending_login", None)
-        st.rerun()
+        st.rerun()  # 동의 즉시 팝업이 닫히고 바로 입장한다 (블로킹 스플래시 없음)
     if c2.button("비동의", use_container_width=True):
         st.session_state.consent = False
         st.session_state.pop("pending_login", None)
@@ -2744,25 +2748,25 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
                     queue_chat(user_text)
                     st.rerun()
 
-        # --- FAB 토글 버튼 (닫힌 상태에선 대표 캐릭터 max 이미지가 버튼) ---
+        # --- FAB 토글 버튼 (닫힌 상태에선 대표 캐릭터 max 이미지가 버튼 위에 얹힌다) ---
         with st.container(key="chat_fab"):
-            max_uri = None if chat_open else question_slime_data_uri(200)
+            max_uri = None if chat_open else question_slime_data_uri(240)
             if max_uri:
-                # 로고 버튼과 동일한 '단일 background-image' 패턴으로 안정적으로 표시한다.
-                # 원본 이미지 배경이 검정이라, 버튼 배경색도 같은 검정으로 맞춰 자연스럽게 보이게 한다.
+                # 버튼은 어두운 배경으로 두고, 그 위에 실제 <img>(검증된 방식)로 max를 겹친다.
                 st.markdown(
                     "<style>.st-key-chat_fab .stButton>button{"
-                    f"background:url('{max_uri}') center/contain no-repeat !important;"
-                    "background-color:#010101 !important;"
+                    "background:#0a0d10 !important;"
                     "border:1px solid rgba(67,211,176,0.7) !important;"
                     "box-shadow:0 12px 30px rgba(67,211,176,0.4) !important;"
                     "font-size:0 !important;color:transparent !important;}"
-                    ".st-key-chat_fab .stButton>button *{font-size:0 !important;color:transparent !important;}"
                     "</style>",
                     unsafe_allow_html=True,
                 )
             st.button("✕" if chat_open else ("" if max_uri else "💬"), key="btn_chat_fab",
                       on_click=toggle_chat, help="max에게 물어보기 (클릭하면 챗봇이 열려요)")
+            if max_uri:
+                st.markdown(f'<img class="cl-fab-max" src="{max_uri}" alt="max">',
+                            unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -2787,13 +2791,6 @@ def main() -> None:
     if not st.session_state.get("logged_in"):
         render_login()
         return
-
-    # 로그인 직후 5초 스플래시
-    if st.session_state.get("login_loading"):
-        render_max_loading("로그인 중...")
-        time.sleep(5)
-        st.session_state.login_loading = False
-        st.rerun()
 
     # 로고 이미지 클릭 등 URL(?nav=) 로 들어온 화면 전환 반영
     if "nav" in st.query_params:
