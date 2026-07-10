@@ -31,6 +31,7 @@ from collections import Counter
 
 import numpy as np
 import streamlit as st
+import streamlit.components.v1 as components
 import anthropic
 from PIL import Image
 
@@ -320,6 +321,8 @@ def logo_data_uri(size: int = 300) -> str | None:
 
 
 SLIME_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mint_pixel_slime.png")
+# 챗봇 진입 버튼용 max 캐릭터(물음표 슬라임) 이미지. 없으면 기본 슬라임으로 대체.
+QUESTION_SLIME_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "question_slime.png")
 
 # 피부랭킹 지도 배경 이미지. 'map_image' 파일을 우선 찾고, 없으면 기존 한국 지도 파일 사용.
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -341,6 +344,27 @@ def slime_data_uri(size: int = 96) -> str | None:
         img = Image.open(SLIME_PATH).convert("RGBA")
     except (OSError, FileNotFoundError):
         return None
+    img.thumbnail((size, size), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+@st.cache_data(show_spinner=False)
+def question_slime_data_uri(size: int = 160) -> str | None:
+    """챗봇 버튼용 max(물음표 슬라임) 이미지를 data URI로 반환.
+    원본은 검은 배경(알파 없음)이라, 근사 검정 픽셀을 투명 처리해 캐릭터만 남긴다.
+    question_slime.png가 없으면 기본 슬라임 이미지로 폴백한다."""
+    path = QUESTION_SLIME_PATH if os.path.exists(QUESTION_SLIME_PATH) else SLIME_PATH
+    try:
+        img = Image.open(path).convert("RGBA")
+    except (OSError, FileNotFoundError):
+        return None
+    arr = np.array(img)
+    r, g, b = arr[..., 0], arr[..., 1], arr[..., 2]
+    black_bg = (r < 24) & (g < 24) & (b < 24)  # 순수 검정 배경만 투명 처리 (눈 등은 보존)
+    arr[..., 3] = np.where(black_bg, 0, arr[..., 3])
+    img = Image.fromarray(arr, "RGBA")
     img.thumbnail((size, size), Image.LANCZOS)
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
@@ -376,6 +400,14 @@ def match_hue_for_nickname(nickname: str) -> int:
     """닉네임을 해시해 _MATCH_HUE_PALETTE 중 하나를 결정적으로 배정."""
     seed = sum(ord(c) for c in (nickname or "")) or 1
     return _MATCH_HUE_PALETTE[seed % len(_MATCH_HUE_PALETTE)]
+
+
+# 랜덤 매치용 상대 닉네임 풀 (랜덤 선택 버튼을 누르면 이 중 무작위로 골라 대결)
+RANDOM_MATCH_NICKS = [
+    "강남 물광남", "홍대 꿀피부", "부산 도자기", "일산 뽀샤시", "수원 광채왕",
+    "대구 무결점", "인천 피부요정", "청담 유리알", "노원 촉촉남", "분당 맑은피부",
+    "성수 뽀송남", "잠실 반짝이", "판교 개발자피부", "제주 청정남",
+]
 
 
 def random_match_result(my_score: int) -> tuple[int, bool]:
@@ -939,10 +971,14 @@ CUSTOM_CSS = """
   color: var(--muted); padding: 2px 2px; font-weight: 600; }
 .st-key-back .stButton > button:hover { color: var(--accent); }
 
-/* ---- 공통 섹션 제목 ---- */
-.cl-h { font-size: 24px; font-weight: 800; letter-spacing: -0.7px; margin: 2px 0 4px; }
+/* ---- 공통 섹션 제목 (가운데 정렬) ---- */
+.cl-h { font-size: 24px; font-weight: 800; letter-spacing: -0.7px; margin: 2px 0 4px;
+  text-align: center; }
 .cl-sec { font-family: 'Space Grotesk', monospace; font-size: 11px; letter-spacing: 2px;
-  color: var(--muted); text-transform: uppercase; margin: 22px 0 12px; }
+  color: var(--muted); text-transform: uppercase; margin: 22px 0 12px; text-align: center; }
+/* 본문 캡션도 가운데 정렬로 통일 */
+.stApp [data-testid="stCaptionContainer"], .stApp [data-testid="stCaptionContainer"] p {
+  text-align: center; }
 
 /* ---- 진단 결과 ---- */
 .cl-result { background: var(--glass); border: 1px solid var(--glass-brd); backdrop-filter: blur(16px);
@@ -1100,7 +1136,7 @@ CUSTOM_CSS = """
 .st-key-chatwidget .stTextInput input:focus { border-color: var(--accent); box-shadow: none; }
 /* 빠른 질문 추천 칩 */
 .st-key-chat_chips { padding: 2px 14px 0; }
-.st-key-chat_chips [data-testid="column"] { padding: 0 3px; }
+.st-key-chat_chips [data-testid="stColumn"] { padding: 0 3px; }
 .st-key-chat_chips .stButton > button {
   border-radius: 999px; font-size: 11.5px; font-weight: 600; padding: 7px 8px;
   min-height: 0; background: var(--glass); border: 1px solid var(--glass-brd);
@@ -1214,6 +1250,20 @@ CUSTOM_CSS = """
   color: var(--muted); }
 .st-key-logout .stButton > button:hover { color: var(--accent); border-color: var(--accent); }
 .st-key-loginbox { max-width: 360px; margin: 6px auto 0; }
+/* 상단 MY 버튼 (로그아웃 옆) */
+.st-key-mybtn .stButton > button { font-size: 12px; font-weight: 700; padding: 8px 6px;
+  color: var(--accent); border-color: rgba(67,211,176,0.35); background: var(--accent-dim); }
+.st-key-mybtn .stButton > button:hover { color: var(--ink);
+  background: linear-gradient(115deg, var(--accent-2), var(--accent)); border-color: transparent; }
+
+/* 마이페이지 개인정보 카드 */
+.cl-info { background: var(--glass); border: 1px solid var(--glass-brd); border-radius: 16px;
+  padding: 6px 16px; margin: 4px 0 8px; }
+.cl-info-row { display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 0; border-bottom: 1px solid var(--glass-brd); font-size: 14px; }
+.cl-info-row:last-child { border-bottom: 0; }
+.cl-info-row__k { color: var(--muted); font-weight: 600; }
+.cl-info-row__v { color: var(--text); font-weight: 700; text-align: right; }
 
 /* 입력창(로그인 / 나이 등) 공통 스타일 */
 .stTextInput input, .stNumberInput input {
@@ -1224,19 +1274,18 @@ CUSTOM_CSS = """
 /* 카메라 프리뷰 + 촬영된 사진 모두 거울(좌우반전) 모드로 - 셀피처럼 자연스럽게 */
 .stApp [data-testid="stCameraInput"] video,
 .stApp [data-testid="stCameraInput"] img { transform: scaleX(-1); }
-/* 얼굴 가이드 - 카메라 프리뷰 중앙에 귀가 있는 사람 얼굴 형태의 점선 오버레이 */
+/* 얼굴 가이드 - 카메라 프리뷰 중앙에 '사람(머리+어깨)' 형태의 점선 오버레이.
+   머리 타원 + 어깨 아치를 그려 사람 실루엣처럼 보이게 한다. */
 .stApp [data-testid="stCameraInput"] div:has(> video) { position: relative; }
 .stApp [data-testid="stCameraInput"] div:has(> video)::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 420'>\
-<path fill-rule='evenodd' fill='rgba(0,0,0,0.18)' d='M0,0H300V420H0Z \
-M150,46 L196,50 L226,78 L238,118 L234,148 L252,152 L266,172 L250,192 L232,196 \
-L224,235 L208,275 L186,315 L163,348 L150,358 L137,348 L114,315 L92,275 L76,235 \
-L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
-<path fill='none' stroke='rgba(94,234,212,0.92)' stroke-width='4' stroke-linejoin='round' stroke-dasharray='11 9' d='M150,46 \
-L196,50 L226,78 L238,118 L234,148 L252,152 L266,172 L250,192 L232,196 \
-L224,235 L208,275 L186,315 L163,348 L150,358 L137,348 L114,315 L92,275 L76,235 \
-L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
+<path fill-rule='evenodd' fill='rgba(0,0,0,0.24)' d='M0,0H300V420H0Z \
+M94,118 a56,66 0 1,0 112,0 a56,66 0 1,0 -112,0 Z \
+M-25,430 a175,205 0 1,0 350,0 a175,205 0 1,0 -350,0 Z'/>\
+<path fill='none' stroke='rgba(94,234,212,0.92)' stroke-width='4' stroke-linejoin='round' stroke-dasharray='11 9' \
+d='M94,118 a56,66 0 1,0 112,0 a56,66 0 1,0 -112,0 Z \
+M-25,430 a175,205 0 1,0 350,0 a175,205 0 1,0 -350,0 Z'/>\
 </svg>") no-repeat center / 100% 100%;
 }
 
@@ -1249,17 +1298,24 @@ L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
   padding: 1px 7px; border-radius: 999px; color: #cfd6dd; background: rgba(255,255,255,0.08);
   border: 1px solid var(--glass-brd); vertical-align: middle; }
 
-/* 주문서(팝오버) 트리거 버튼 - 랭킹 각 줄 오른쪽 */
-[class*="st-key-rankrow_"] { margin-bottom: 2px; }
-[class*="st-key-rankrow_"] .cl-rank { margin-bottom: 0; }
-[class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 6px; align-items: center; }
-[class*="st-key-rankrow_"] [data-testid="column"]:last-child { display: flex; justify-content: center; }
+/* 랭킹 각 줄 = 하나의 박스(카드 + 주문서 버튼을 함께 감싼다).
+   기존엔 주문서(구매내역) 버튼이 카드 박스 '밖'에 나가 있었는데 박스 안으로 넣는다. */
+[class*="st-key-rankrow_"] {
+  background: var(--glass); border: 1px solid var(--glass-brd); border-radius: 16px;
+  margin-bottom: 10px; padding: 4px 8px 4px 4px;
+}
+[class*="st-key-rankrow_"] .cl-rank {
+  background: transparent; border: 0; border-radius: 12px; margin: 0; padding: 8px 6px;
+}
+[class*="st-key-rankrow_"] .cl-rank.is-me { background: var(--accent-dim); box-shadow: none; }
+[class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 4px; align-items: center; }
+[class*="st-key-rankrow_"] [data-testid="stColumn"]:last-child { display: flex; justify-content: center; }
 [class*="st-key-rankrow_"] [data-testid="stPopover"] button {
-  border: 1px solid var(--glass-brd); background: var(--glass); color: var(--muted);
-  border-radius: 12px; padding: 8px 6px; min-height: 0; font-size: 16px; width: 100%;
+  border: 0; background: transparent; color: var(--muted);
+  border-radius: 10px; padding: 8px 4px; min-height: 0; font-size: 18px; width: 100%;
 }
 [class*="st-key-rankrow_"] [data-testid="stPopover"] button:hover {
-  border-color: var(--accent); color: var(--accent); }
+  color: var(--accent); background: var(--accent-dim); }
 /* 팝오버 안 3개월 사용 내역 한 줄 */
 .cl-hist { display: flex; gap: 10px; align-items: baseline; padding: 7px 2px;
   border-bottom: 1px solid var(--glass-brd); font-size: 13px; }
@@ -1349,16 +1405,14 @@ L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
   color: var(--muted); flex-shrink: 0; }
 .cl-match__label { font-size: 12px; color: var(--muted); margin-top: 2px; font-weight: 600; }
 
-/* Ready!! / Fight!! 팝업 배너 - .cl-match__arena(position:relative) 안에 넣어서
-   그 캐릭터 영역 위에만 뜨게 한다 (뷰포트 전체 기준으로 띄우면 페이지 실제 높이와
-   안 맞아 닉네임 입력폼과 겹치는 문제가 있었다). */
-.cl-match__banner { position: absolute; inset: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: center; pointer-events: none; }
-.cl-match__banner span { font-family: 'Space Grotesk', monospace; font-weight: 800;
-  font-size: 56px; letter-spacing: 2px; opacity: 0; transform: scale(0.4);
+/* Ready!! / Fight!! 큐 - 캐릭터와 겹치지 않게 아레나 '위'에 별도 줄로 띄운다.
+   (예전엔 아레나 위에 겹쳐 떠서 캐릭터와 글자가 겹쳐 보이는 문제가 있었다.) */
+.cl-match__cue { text-align: center; margin: 2px 0 4px; min-height: 46px; }
+.cl-match__cue span { display: inline-block; font-family: 'Space Grotesk', monospace;
+  font-weight: 800; font-size: 46px; letter-spacing: 2px; opacity: 0; transform: scale(0.4);
   background: linear-gradient(115deg, var(--accent-2), var(--accent));
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 30px rgba(67,211,176,0.55));
+  filter: drop-shadow(0 0 22px rgba(67,211,176,0.5));
   animation: cl-match-pop 0.5s cubic-bezier(.2,1.4,.4,1) 1 forwards; }
 @keyframes cl-match-pop {
   0% { opacity: 0; transform: scale(0.3); }
@@ -1385,7 +1439,8 @@ L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
 @media (max-width: 480px) {
   .cl-match__char, .cl-match__emoji { width: 84px; height: 84px; font-size: 50px; }
   .cl-match__arena { min-height: 132px; gap: 6px; }
-  .cl-match__banner span { font-size: 42px; }
+  .cl-match__cue span { font-size: 36px; }
+  .cl-match__cue { min-height: 40px; }
   .cl-match__score { font-size: 32px; }
   .block-container { padding-left: 1rem; padding-right: 1rem; padding-top: 1.4rem; }
   .cl-logo { width: 120px; height: 120px; }
@@ -1429,12 +1484,18 @@ L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z'/>\
   .cl-chat-head__ava { width: 26px; height: 26px; }
   .cl-chat-head { padding: 13px 15px; }
   .cl-msg { font-size: 12.5px; max-width: 88%; }
-  /* 하단 내비게이션 - 아이콘/글자 축소로 4칸이 확실히 한 줄에 */
+  /* 하단 내비게이션 - 아이콘/글자 축소로 5칸이 확실히 한 줄에 */
   .st-key-bottomnav { padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)); }
   .st-key-bottomnav [data-testid="stHorizontalBlock"] { gap: 0px; }
   .st-key-bottomnav .stButton > button { padding: 5px 1px; }
   .st-key-bottomnav .stButton > button p:first-child { font-size: 18px; }
   .st-key-bottomnav .stButton > button p:last-child { font-size: 9.5px; }
+  /* 상단 MY/로그아웃 버튼 - 좁은 화면에서 잘리지 않게 */
+  .st-key-mybtn .stButton > button, .st-key-logout .stButton > button {
+    font-size: 11px; padding: 8px 3px; }
+  /* 마이페이지 개인정보 카드 */
+  .cl-info { padding: 4px 13px; }
+  .cl-info-row { font-size: 13px; padding: 10px 0; }
 }
 
 /* 아주 좁은 화면(구형 폰) 대응 - 하단 내비 글자만 더 축소 */
@@ -1558,7 +1619,7 @@ def section_title(title: str, tag: str) -> None:
 def render_header() -> None:
     """상단 브랜드 바(로고=홈 이동, 페이지 새로고침 없이 st.button으로 처리) + 로그아웃 (모든 화면 공통)."""
     top_bar = st.container(key="topbar")
-    top_l, top_r = top_bar.columns([3, 1])
+    top_l, top_m, top_r = top_bar.columns([3, 1, 1.35])
     with top_l:
         with st.container(key="logohome"):
             uri = logo_data_uri()
@@ -1582,31 +1643,36 @@ def render_header() -> None:
                     unsafe_allow_html=True,
                 )
             st.button("clozkin", key="btn_logo_home", on_click=set_nav, args=("home",))
+    with top_m:
+        with st.container(key="mybtn"):
+            st.button("MY", key="btn_my", on_click=set_nav, args=("my",),
+                      use_container_width=True)
     with top_r:
         with st.container(key="logout"):
             st.button("로그아웃", key="btn_logout", on_click=_logout,
                       use_container_width=True)
 
 
-# 얼굴 가이드 얼굴형 path (viewBox 0 0 300 420) - 카메라 오버레이 마스크에 재사용
-_FACE_PATH = (
-    "M150,46 L196,50 L226,78 L238,118 L234,148 L252,152 L266,172 L250,192 L232,196 "
-    "L224,235 L208,275 L186,315 L163,348 L150,358 L137,348 L114,315 L92,275 L76,235 "
-    "L68,196 L50,192 L34,172 L48,152 L66,148 L62,118 L74,78 L104,50 Z"
+# 사람(머리+어깨) 가이드 path (viewBox 0 0 300 420) - 카메라 블러 마스크에 재사용.
+# 머리 타원 + 어깨 타원(윗부분만 화면에 보임)을 합쳐 사람 실루엣을 만든다.
+_PERSON_PATH = (
+    "M94,118 a56,66 0 1,0 112,0 a56,66 0 1,0 -112,0 Z "
+    "M-25,430 a175,205 0 1,0 350,0 a175,205 0 1,0 -350,0 Z"
 )
 
 
 def _inject_camera_overlay() -> None:
-    """카메라 프리뷰에서 얼굴 가이드 '바깥'을 블러 처리하고, 블러 영역에 max를 배치한다.
-    mask(rect - face, even-odd)로 얼굴 안쪽은 선명, 바깥쪽만 backdrop-filter 블러가 걸린다."""
-    # 얼굴 바깥만 불투명(white)한 마스크 SVG. '#' 은 data URI에서 문제되므로 색상명 사용.
+    """카메라 프리뷰에서 사람 가이드 '바깥'을 블러 처리하고, 블러 영역(오른쪽 위)에 max를 배치한다.
+    mask(rect - person, even-odd)로 사람 안쪽은 선명, 바깥쪽만 backdrop-filter 블러가 걸린다."""
+    # 사람 바깥만 불투명(white)한 마스크 SVG. '#' 은 data URI에서 문제되므로 색상명 사용.
     mask_svg = (
         "data:image/svg+xml;utf8,"
         "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 420'>"
-        "<path fill='white' fill-rule='evenodd' d='M0,0H300V420H0Z " + _FACE_PATH + "'/></svg>"
+        "<path fill='white' fill-rule='evenodd' d='M0,0H300V420H0Z " + _PERSON_PATH + "'/></svg>"
     )
     max_uri = slime_data_uri(200)
-    max_bg = (f'background: url("{max_uri}") no-repeat center bottom 5% / 58px;'
+    # max는 사람 실루엣 바깥(오른쪽 위 여백)에 놓아 블러 영역 안에서 또렷하게 보이게 한다.
+    max_bg = (f'background: url("{max_uri}") no-repeat right 8% top 9% / 52px;'
               if max_uri else "")
     st.markdown(
         "<style>"
@@ -2075,11 +2141,13 @@ def render_match_screen() -> None:
 
     if stage in ("intro", "nickname"):
         opp_hue = match_hue_for_nickname(opponent["nickname"]) if opponent else None
-        # Ready!! 배너는 최초 진입(intro) 시 한 번만 - 다음 렌더부터는 닉네임 입력 폼만 보인다.
-        banner = "Ready!!" if stage == "intro" else None
+        # Ready!! 배너는 최초 진입(intro) 시 한 번만. 캐릭터와 겹치지 않도록
+        # 아레나 '위'에 별도 줄(cl-match__cue)로 띄운다.
+        cue = ('<div class="cl-match__cue"><span>Ready!!</span></div>'
+               if stage == "intro" else "")
         st.markdown(
-            f'<div class="cl-match">'
-            f'{_match_arena_html(my_hue, opp_hue, opp_grayscale=opponent is None, banner_text=banner)}'
+            f'<div class="cl-match">{cue}'
+            f'{_match_arena_html(my_hue, opp_hue, opp_grayscale=opponent is None)}'
             f'<div class="cl-match__label">{my_name} VS '
             f'{opponent["nickname"] if opponent else "???"}</div></div>',
             unsafe_allow_html=True,
@@ -2087,6 +2155,24 @@ def render_match_screen() -> None:
 
         if stage == "intro":
             st.session_state.match_stage = "nickname"
+
+        def _start_match(target: str) -> None:
+            """닉네임(직접 입력 또는 랜덤)으로 대결을 시작한다."""
+            target = (target or "").strip()
+            if not target:
+                st.error("상대방 닉네임을 입력해주세요.")
+                return
+            if not my_diag:
+                st.warning("먼저 피부 진단을 받아야 매치를 시작할 수 있어요.")
+                st.button("진단하러 가기", type="primary", use_container_width=True,
+                          on_click=set_nav, args=("diagnose",), key="match_goto_diag")
+                return
+            # 실제 기록을 찾지 않고, 어떤 닉네임이든 무작위로 승/패가 정해지는 상대를 만든다.
+            my_score = int(my_diag.get("score", 0))
+            opp_score, _ = random_match_result(my_score)
+            st.session_state.match_opponent = {"nickname": target, "score": opp_score}
+            st.session_state.match_stage = "fight"
+            st.rerun()
 
         with st.container(key="match_nickform"):
             with st.form(key="match_nickname_form"):
@@ -2096,33 +2182,21 @@ def render_match_screen() -> None:
                 )
                 submitted = st.form_submit_button(
                     "대결 신청", type="primary", use_container_width=True)
+            # 랜덤 선택 - 아무 닉네임이나 골라 랜덤한 사람과 대결
+            random_clicked = st.button("🎲 랜덤 상대와 대결하기", use_container_width=True,
+                                       key="match_random")
 
             if submitted:
-                target = (nickname_input or "").strip()
-                if not target:
-                    st.error("상대방 닉네임을 입력해주세요.")
-                elif not my_diag:
-                    st.warning("먼저 피부 진단을 받아야 매치를 시작할 수 있어요.")
-                    st.button("진단하러 가기", type="primary", use_container_width=True,
-                              on_click=set_nav, args=("diagnose",), key="match_goto_diag")
-                else:
-                    # 실제 기록을 찾지 않고, 어떤 닉네임을 넣어도 무작위로 승/패가
-                    # 정해지는 상대를 만든다 (점수는 그 결과에 맞게 자동 생성).
-                    my_score = int(my_diag.get("score", 0))
-                    opp_score, _ = random_match_result(my_score)
-                    st.session_state.match_opponent = {
-                        "nickname": target,
-                        "score": opp_score,
-                    }
-                    st.session_state.match_stage = "fight"
-                    st.rerun()
+                _start_match(nickname_input)
+            elif random_clicked:
+                _start_match(random.choice(RANDOM_MATCH_NICKS))
         return
 
     if stage == "fight":
         opp_hue = match_hue_for_nickname(opponent.get("nickname", "")) if opponent else None
         st.markdown(
-            f'<div class="cl-match">'
-            f'{_match_arena_html(my_hue, opp_hue, banner_text="Fight!!")}</div>',
+            f'<div class="cl-match"><div class="cl-match__cue"><span>Fight!!</span></div>'
+            f'{_match_arena_html(my_hue, opp_hue)}</div>',
             unsafe_allow_html=True,
         )
         time.sleep(0.9)
@@ -2290,6 +2364,53 @@ def render_rewards_screen() -> None:
             )
 
 
+def render_my_screen() -> None:
+    """마이페이지 - 개인정보 + 리워드 점수 요약 + 구매내역 진입.
+    구매 내역은 하단바에서 빠지고 이 화면에서만 들어갈 수 있다."""
+    render_header()
+    section_title("마이페이지", "MY")
+
+    name = (st.session_state.get("user_name") or "").strip() or "게스트"
+    diag = st.session_state.get("last_diagnosis") or {}
+    points = st.session_state.get("reward_points", 0)
+    tier = tier_for_points(points)
+
+    age = st.session_state.get("diag_age")
+    age_group = f"{(int(age) // 10) * 10}대" if age else "-"
+    skin_type = diag.get("type_label") or diag.get("skin_type") or "아직 진단 전"
+    score = diag.get("score")
+    score_text = f"{score}점" if score is not None else "아직 진단 전"
+
+    # --- 개인정보 ---
+    st.markdown('<div class="cl-sec">PROFILE</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">내 정보</div>', unsafe_allow_html=True)
+    info = [("닉네임", name), ("나이대", age_group), ("피부 타입", skin_type),
+            ("최근 피부 점수", score_text), ("리워드 포인트", f"{points:,}P")]
+    rows = "".join(
+        f'<div class="cl-info-row"><span class="cl-info-row__k">{k}</span>'
+        f'<span class="cl-info-row__v">{v}</span></div>' for k, v in info)
+    st.markdown(f'<div class="cl-info">{rows}</div>', unsafe_allow_html=True)
+
+    # --- 리워드 점수 요약 ---
+    st.markdown('<div class="cl-sec">REWARD</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">내 리워드</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="cl-result"><p class="cl-result__label">MY REWARD POINTS</p>'
+        f'<p class="cl-result__score">{points:,}P</p>'
+        f'<p class="cl-result__type">{tier["icon"]} {tier["name"]} 티어</p></div>',
+        unsafe_allow_html=True,
+    )
+    st.button("🎁 리워드 · 티어 자세히 보기", use_container_width=True,
+              on_click=set_nav, args=("rewards",), key="my_go_rewards")
+
+    # --- 구매 내역 진입 (여기서만 접근 가능) ---
+    st.markdown('<div class="cl-sec">PURCHASES</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">구매 내역</div>', unsafe_allow_html=True)
+    st.caption("내가 구매한 화장품 내역을 한 곳에서 확인할 수 있어요.")
+    st.button("🛍️ 구매 내역 보러가기", type="primary", use_container_width=True,
+              on_click=set_nav, args=("purchases",), key="my_go_purchases")
+
+
 def render_home_screen() -> None:
     render_header()
     uri = logo_data_uri()
@@ -2360,12 +2481,30 @@ def set_nav(screen: str) -> None:
     st.session_state.nav = screen
 
 
+def scroll_to_top() -> None:
+    """다음 화면/단계로 넘어갈 때 페이지를 맨 위로 스크롤한다.
+    Streamlit 본문 스크롤 컨테이너(버전에 따라 셀렉터가 다름)를 모두 시도한다."""
+    components.html(
+        """
+        <script>
+        const w = window.parent, d = w.document;
+        const sels = ['section.main', '[data-testid="stMain"]',
+                      '[data-testid="stAppViewContainer"]', '.main', '.block-container'];
+        for (const s of sels) { const e = d.querySelector(s); if (e) { e.scrollTop = 0; } }
+        if (d.scrollingElement) d.scrollingElement.scrollTop = 0;
+        w.scrollTo(0, 0);
+        </script>
+        """,
+        height=0,
+    )
+
+
 def render_bottom_nav(active: str) -> None:
-    """하단 고정 탭 내비게이션 (홈 / 랭킹 / 진단 / 매치 / 구매 / 리워드).
-    아이콘 위 + 작은 글자 아래로 쌓아, 웹·모바일 모두 화면 폭 안에 6칸이 들어가게 한다."""
-    items = [("home", "🏠", "홈"), ("ranking", "🏆", "랭킹"),
-             ("diagnose", "📷", "진단"), ("match", "⚔️", "매치"),
-             ("purchases", "🛍️", "구매"), ("rewards", "🎁", "리워드")]
+    """하단 고정 탭 내비게이션. 홈을 가운데에 두고 좌우로 배치한다 (구매내역은 MY에서만).
+    아이콘 위 + 작은 글자 아래로 쌓아, 웹·모바일 모두 화면 폭 안에 5칸이 들어가게 한다."""
+    items = [("ranking", "🏆", "랭킹"), ("diagnose", "📷", "진단"),
+             ("home", "🏠", "홈"), ("match", "⚔️", "매치"),
+             ("rewards", "🎁", "리워드")]
     with st.container(key="bottomnav"):
         cols = st.columns(len(items))
         for col, (key, icon, label) in zip(cols, items):
@@ -2570,19 +2709,21 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
                     queue_chat(user_text)
                     st.rerun()
 
-        # --- FAB 토글 버튼 ---
+        # --- FAB 토글 버튼 (닫힌 상태에선 대표 캐릭터 max 이미지가 버튼) ---
         with st.container(key="chat_fab"):
-            slime_uri = None if chat_open else slime_data_uri(96)
-            if slime_uri:
+            max_uri = None if chat_open else question_slime_data_uri(160)
+            if max_uri:
+                # 검은 배경을 지운 max 캐릭터를 어두운 원형 배경 위에 올려 또렷하게 보이게 한다.
                 st.markdown(
                     "<style>.st-key-chat_fab .stButton>button{"
-                    f"background:url('{slime_uri}') center/68% no-repeat, "
-                    "linear-gradient(115deg, var(--accent-2), var(--accent));"
+                    f"background:url('{max_uri}') center 60%/88% no-repeat, "
+                    "radial-gradient(circle at 50% 42%, #14333c, #0c1015)!important;"
+                    "border:1px solid rgba(67,211,176,0.55)!important;"
                     "font-size:0!important;color:transparent!important;}</style>",
                     unsafe_allow_html=True,
                 )
-            st.button("✕" if chat_open else ("" if slime_uri else "💬"), key="btn_chat_fab",
-                      on_click=toggle_chat, help="max에게 물어보기")
+            st.button("✕" if chat_open else ("" if max_uri else "💬"), key="btn_chat_fab",
+                      on_click=toggle_chat, help="max에게 물어보기 (클릭하면 챗봇이 열려요)")
 
 
 # ---------------------------------------------------------------------------
@@ -2620,14 +2761,23 @@ def main() -> None:
         st.session_state.nav = st.query_params["nav"]
         del st.query_params["nav"]
 
-    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단 / 매치 / 구매 / 리워드)
+    # 화면/단계가 바뀌면 페이지 최상단으로 스크롤 (다음 페이지로 넘어갈 때 위로).
+    # 실제 스크롤 스크립트는 main 끝에서 주입한다 (최상단에 빈 iframe 여백이 생기지 않도록).
     nav = st.session_state.get("nav", "home")
+    view_sig = (f"{nav}|{st.session_state.get('diag_stage', '')}"
+                f"|{st.session_state.get('match_stage', '')}")
+    need_scroll = st.session_state.get("_view_sig") != view_sig
+    st.session_state._view_sig = view_sig
+
+    # 하단 탭으로 화면 전환 (홈 / 랭킹 / 진단 / 매치 / 리워드), 구매내역은 MY에서만
     if nav == "ranking":
         render_ranking()
     elif nav == "diagnose":
         render_diagnosis_screen()
     elif nav == "match":
         render_match_screen()
+    elif nav == "my":
+        render_my_screen()
     elif nav == "purchases":
         render_purchases_screen()
     elif nav == "rewards":
@@ -2637,6 +2787,9 @@ def main() -> None:
 
     render_bottom_nav(nav)
     render_chat_widget(client)
+
+    if need_scroll:
+        scroll_to_top()
 
 
 if __name__ == "__main__":
