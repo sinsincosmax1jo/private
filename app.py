@@ -143,13 +143,16 @@ _HISTORY_POOL = [
     "우르오스 스킨워시 클렌저",
 ]
 
-# 기존 진단 기록(실명/게스트 등)을 노출할 때 씌우는 닉네임 풀. 이름을 해시해
-# 항상 같은 닉네임이 나오도록 하고, 랭킹에는 실명이 절대 보이지 않게 한다.
+# 기존 진단 기록(실명/게스트 등)을 노출할 때 씌우는 닉네임 풀.
+# 랭킹에서 실명은 절대 보이지 않게 하고, 서로 '중복되지 않게' 순서대로 배정한다.
+# MOCK_RANKING 의 닉네임과도 겹치지 않도록 서로 다른 문자열로 구성한다.
 _RECORD_NICKS = [
-    "역삼동 뽀샤시", "망원동 촉촉남", "구의동 맑은결", "신촌 유리알", "종로 도자기",
-    "왕십리 광채남", "목동 꿀피부", "관악 무결점", "동탄 물광남", "송파 반짝이",
+    "역삼동 뽀샤시", "망원동 촉촉남", "구의동 맑은결", "신촌 유리알", "종로 도자기왕",
+    "왕십리 광채남", "목동 꿀광피부", "관악 무결점남", "동탄 물빛남", "송파 반짝이",
     "노원 클린페이스", "은평 뽀송남", "마포 개운한피부", "강서 산뜻남", "성북 정돈남",
     "중랑 안정피부", "금천 생기남", "도봉 투명피부", "용산 밸런스남", "양천 청결남",
+    "강동 매끈남", "구로 촉촉핏", "서대문 광채핏", "동대문 클리어", "영등포 뽀얀남",
+    "성동 유리막", "광진 물광킹", "노들 도자기핏", "상암 청량남", "가산 반짝핏",
 ]
 # 바(bare) 성분명 - 기록의 product가 이런 성분명이면 실제 제품명으로 치환한다.
 _BARE_INGREDIENTS = {
@@ -158,10 +161,19 @@ _BARE_INGREDIENTS = {
 }
 
 
-def nickify_name(name: str) -> str:
-    """실명/게스트 등 어떤 이름이든 해시해 결정적으로 닉네임을 배정한다."""
-    seed = sum(ord(c) for c in (name or "")) or 1
-    return _RECORD_NICKS[seed % len(_RECORD_NICKS)]
+def unique_nick(idx: int, used: set[str]) -> str:
+    """랭킹에서 서로 겹치지 않는 닉네임을 배정한다.
+    idx(기록 순번)로 풀에서 하나 고르고, 이미 쓰였으면 번호를 붙여 유일하게 만든다."""
+    base = _RECORD_NICKS[idx % len(_RECORD_NICKS)]
+    if idx < len(_RECORD_NICKS) and base not in used:
+        return base
+    # 풀을 다 썼거나 충돌하면 'OOO N호'로 유일하게 보장
+    n = idx // len(_RECORD_NICKS) + 2
+    cand = f"{base} {n}호"
+    while cand in used:
+        n += 1
+        cand = f"{base} {n}호"
+    return cand
 
 
 def real_product_for(seed_text: str, current: str | None) -> str:
@@ -1949,12 +1961,17 @@ def build_ranking_board() -> list[dict]:
     records = load_records()
     my_id = st.session_state.get("my_record_id")
     board = [dict(x) for x in MOCK_RANKING]
-    for r in records:
+    # 이미 쓰인 닉네임(목업 포함)을 추적해 중복 없이 배정한다.
+    used = {x["name"] for x in MOCK_RANKING}
+    # id 순(안정적)으로 배정 → 새 기록이 추가돼도 기존 닉네임이 바뀌지 않는다.
+    records_sorted = sorted(records, key=lambda r: r.get("id", 0))
+    for idx, r in enumerate(records_sorted):
         orig_name = r.get("nickname") or r.get("name") or "익명"
-        nick = nickify_name(orig_name)
+        nick = unique_nick(idx, used)
+        used.add(nick)
         is_me = r.get("id") == my_id
         board.append({
-            # 실명 대신 항상 닉네임으로 노출 (내 기록은 '(나)' 표시로 구분)
+            # 실명 대신 항상 '중복되지 않는' 닉네임으로 노출 (내 기록은 '(나)' 표시로 구분)
             "name": f"{nick} (나)" if is_me else nick,
             "age_group": r.get("age_group", "-"),
             "skin_type": r.get("skin_type"),
