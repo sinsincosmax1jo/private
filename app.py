@@ -1141,6 +1141,8 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .stApp [data-baseweb="tab-list"] { gap: 6px; background: transparent; }
 .stApp [data-baseweb="tab"] { font-weight: 700; }
 .stApp [data-baseweb="tab-highlight"] { background: var(--accent); }
+/* 가로 라디오(나이대·피부타입 등)가 좁은 폭에서 베젤 밖으로 넘치지 않고 줄바꿈되게 */
+.stApp [data-testid="stRadio"] [role="radiogroup"] { flex-wrap: wrap; row-gap: 4px; }
 .cl-rank__link { font-size: 11px; color: var(--accent); text-decoration: none; white-space: nowrap; }
 .cl-rank__link:hover { text-decoration: underline; }
 
