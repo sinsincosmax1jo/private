@@ -2186,12 +2186,12 @@ def render_ranking() -> None:
 
     board = build_ranking_board()
 
-    # 참여자 수 - '오늘' 참여 인원(세션 동안 고정) + 누적 인원을 함께 보여준다
+    # 참여자 수 - '오늘' 참여 인원(세션 동안 고정) + 누적 인원(데모용 고정 수치)
     today_count = st.session_state.setdefault("today_count", random.randint(32, 68))
     st.markdown(
         f'<div class="cl-status-wrap"><div class="cl-status">'
         f'🔥 <b>오늘 {today_count}명</b>이 피부 진단에 참여했어요 · '
-        f'누적 {len(board):,}명</div></div>',
+        f'누적 31,992명</div></div>',
         unsafe_allow_html=True,
     )
 
