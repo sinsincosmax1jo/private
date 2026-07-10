@@ -380,20 +380,16 @@ def slime_data_uri(size: int = 96) -> str | None:
 
 
 @st.cache_data(show_spinner=False)
-def question_slime_data_uri(size: int = 160) -> str | None:
+def question_slime_data_uri(size: int = 220) -> str | None:
     """챗봇 버튼용 max(물음표 슬라임) 이미지를 data URI로 반환.
-    원본은 검은 배경(알파 없음)이라, 근사 검정 픽셀을 투명 처리해 캐릭터만 남긴다.
+    원본이 검은 배경이라 가공 없이 그대로 쓰고, 버튼 배경색도 같은 검정으로 맞춰
+    로고 버튼과 동일한 단일 background-image 방식으로 안정적으로 표시한다.
     question_slime.png가 없으면 기본 슬라임 이미지로 폴백한다."""
     path = QUESTION_SLIME_PATH if os.path.exists(QUESTION_SLIME_PATH) else SLIME_PATH
     try:
         img = Image.open(path).convert("RGBA")
     except (OSError, FileNotFoundError):
         return None
-    arr = np.array(img)
-    r, g, b = arr[..., 0], arr[..., 1], arr[..., 2]
-    black_bg = (r < 24) & (g < 24) & (b < 24)  # 순수 검정 배경만 투명 처리 (눈 등은 보존)
-    arr[..., 3] = np.where(black_bg, 0, arr[..., 3])
-    img = Image.fromarray(arr, "RGBA")
     img.thumbnail((size, size), Image.LANCZOS)
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
@@ -2733,15 +2729,19 @@ def render_chat_widget(client: anthropic.Anthropic | None) -> None:
 
         # --- FAB 토글 버튼 (닫힌 상태에선 대표 캐릭터 max 이미지가 버튼) ---
         with st.container(key="chat_fab"):
-            max_uri = None if chat_open else question_slime_data_uri(160)
+            max_uri = None if chat_open else question_slime_data_uri(200)
             if max_uri:
-                # 검은 배경을 지운 max 캐릭터를 어두운 원형 배경 위에 올려 또렷하게 보이게 한다.
+                # 로고 버튼과 동일한 '단일 background-image' 패턴으로 안정적으로 표시한다.
+                # 원본 이미지 배경이 검정이라, 버튼 배경색도 같은 검정으로 맞춰 자연스럽게 보이게 한다.
                 st.markdown(
                     "<style>.st-key-chat_fab .stButton>button{"
-                    f"background:url('{max_uri}') center 60%/88% no-repeat, "
-                    "radial-gradient(circle at 50% 42%, #14333c, #0c1015)!important;"
-                    "border:1px solid rgba(67,211,176,0.55)!important;"
-                    "font-size:0!important;color:transparent!important;}</style>",
+                    f"background:url('{max_uri}') center/contain no-repeat !important;"
+                    "background-color:#010101 !important;"
+                    "border:1px solid rgba(67,211,176,0.7) !important;"
+                    "box-shadow:0 12px 30px rgba(67,211,176,0.4) !important;"
+                    "font-size:0 !important;color:transparent !important;}"
+                    ".st-key-chat_fab .stButton>button *{font-size:0 !important;color:transparent !important;}"
+                    "</style>",
                     unsafe_allow_html=True,
                 )
             st.button("✕" if chat_open else ("" if max_uri else "💬"), key="btn_chat_fab",
