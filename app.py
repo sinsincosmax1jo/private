@@ -1361,9 +1361,11 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   background: transparent; border: 0; border-radius: 12px; margin: 0; padding: 8px 6px;
 }
 [class*="st-key-rankrow_"] .cl-rank.is-me { background: var(--accent-dim); box-shadow: none; }
-/* 3개 컬럼(정보 / 쇼핑아이콘 / 주문서)을 세로 가운데로 정렬해 한 줄처럼 보이게 한다 */
-[class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 2px; align-items: center; }
-[class*="st-key-rankrow_"] [data-testid="stColumn"] { align-self: center; }
+/* 3개 컬럼(정보 / 쇼핑아이콘 / 주문서)을 세로 가운데로 정렬해 한 줄처럼 보이게 한다.
+   모바일(좁은 화면)에서도 세로로 줄바꿈되지 않도록 nowrap + min-width:0 을 강제한다. */
+[class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] {
+  gap: 2px; align-items: center; flex-wrap: nowrap; }
+[class*="st-key-rankrow_"] [data-testid="stColumn"] { align-self: center; min-width: 0; }
 /* 구매(쇼핑백+최저가) 컬럼 - 아이콘 그룹 가운데 정렬 */
 [class*="st-key-rankrow_"] [data-testid="stColumn"]:nth-child(2) { display: flex;
   align-items: center; justify-content: center; }
@@ -1573,11 +1575,24 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   .cl-info-row { font-size: 13px; padding: 10px 0; }
 }
 
-/* 아주 좁은 화면(구형 폰) 대응 - 하단 내비 글자만 더 축소 */
+/* 아주 좁은 화면(구형 폰) 대응 - 하단 내비/랭킹 아이콘을 더 축소해 한 줄 유지 */
 @media (max-width: 360px) {
   .st-key-bottomnav .stButton > button p:first-child { font-size: 17px; }
   .st-key-bottomnav .stButton > button p:last-child { font-size: 9px; letter-spacing: -0.4px; }
-  .cl-agechip, .cl-typechip { font-size: 8.5px; padding: 1px 5px; }
+  .cl-agechip, .cl-typechip { font-size: 8.5px; padding: 1px 5px; margin-left: 3px; }
+  /* 랭킹 3개 아이콘이 좁은 폭에서도 한 박스 안 한 줄에 들어가게 축소 */
+  .cl-rank__name { font-size: 12px; }
+  .cl-rank__product { font-size: 10.5px; }
+  .cl-rank__num { width: 16px; }
+  [class*="st-key-rankrow_"] [data-testid="stHorizontalBlock"] { gap: 1px; }
+  [class*="st-key-rankrow_"] { padding: 3px 4px; }
+  [class*="st-key-rankrow_"] .cl-shop-btn, [class*="st-key-rankrow_"] .cl-price-btn {
+    width: 30px; height: 30px; }
+  [class*="st-key-rankrow_"] .cl-shop-btn svg, [class*="st-key-rankrow_"] .cl-price-btn svg {
+    width: 14px; height: 14px; }
+  [class*="st-key-rankrow_"] [data-testid="stColumn"]:nth-child(2) .cl-shop-group { gap: 3px; }
+  [class*="st-key-rankrow_"] [data-testid="stPopover"] button {
+    width: 30px; height: 30px; min-height: 30px; font-size: 14px; }
 }
 
 /* 폰 화면처럼 보이는 민트색 베젤 - .stApp 자체는 손대지 않고(스크롤/레이아웃 안전),
