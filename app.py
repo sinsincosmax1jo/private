@@ -573,7 +573,7 @@ RANDOM_MATCH_NICKS = [
 
 
 # 매치 리워드 - 시작하는 순간 사용되는 포인트 / 승리 시 지급되는 포인트
-MATCH_ENTRY_COST = 2
+MATCH_ENTRY_COST = 10
 MATCH_WIN_REWARD = 20
 
 
