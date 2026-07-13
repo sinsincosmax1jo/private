@@ -272,6 +272,20 @@ MOCK_DONGS = [
     {"name": "백현동", "count": 52},
 ]
 
+# 회원가입 지역 선택용 - 시 / 동 목록 (데모용 목업). 성남시는 위 랭킹 동네와 동일하게 맞춘다.
+SIGNUP_REGIONS = {
+    "서울특별시": ["강남동", "서초동", "송파동", "마포동", "성수동", "여의도동", "잠실동", "상도동"],
+    "성남시": [d["name"] for d in MOCK_DONGS],
+    "수원시": ["영통동", "인계동", "권선동", "매탄동", "광교동"],
+    "용인시": ["수지동", "기흥동", "죽전동", "보정동"],
+    "고양시": ["일산동", "정발산동", "행신동", "화정동", "주엽동"],
+    "인천광역시": ["송도동", "청라동", "부평동", "구월동"],
+    "부산광역시": ["해운대동", "서면동", "광안동", "남천동"],
+    "대구광역시": ["수성동", "범어동", "동성로동"],
+    "대전광역시": ["둔산동", "유성동", "은행동"],
+    "광주광역시": ["상무동", "충장동", "첨단동"],
+}
+
 EVENT_LABELS = {
     "date": "소개팅",
     "interview": "면접",
@@ -1873,7 +1887,8 @@ def _logout() -> None:
               "reward_points", "last_reward_earned", "login_loading",
               "agree_privacy", "agree_location", "signup_stage",
               "signup_agree_privacy", "signup_agree_location",
-              "user_age_group", "user_neighborhood",
+              "signup_city", "signup_dong",
+              "user_age_group", "user_neighborhood", "user_city",
               "match_stage", "match_opponent", "match_last_reward", "gift_claimed"):
         st.session_state.pop(k, None)
     _reset_survey_answers()
@@ -1978,26 +1993,36 @@ def render_login() -> None:
 
 
 def render_signup() -> None:
-    """회원가입 화면 - 닉네임·비밀번호·나이대·사는동네 입력 + 필수 동의 후 바로 로그인."""
-    _dong_names = [d["name"] for d in MOCK_DONGS]
+    """회원가입 화면 - 닉네임·비밀번호·나이대·사는곳(시/동) 입력 + 필수 동의 후 바로 로그인.
+    시를 바꾸면 동 목록이 즉시 갱신돼야 해서 st.form 대신 일반 위젯 + 버튼으로 구성한다."""
     st.markdown('<div class="cl-sec">SIGN UP</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">회원가입</div>', unsafe_allow_html=True)
     st.caption("몇 가지만 입력하면 바로 시작할 수 있어요. 맞춤 추천에 사용돼요.")
 
+    cities = list(SIGNUP_REGIONS.keys())
+    default_city_idx = cities.index("성남시") if "성남시" in cities else 0
+
     with st.container(key="signupbox"):
-        with st.form(key="signup_form"):
-            nickname = st.text_input("닉네임", placeholder="닉네임", key="signup_nickname")
-            password = st.text_input("비밀번호", type="password",
-                                     placeholder="비밀번호", key="signup_pw")
-            age_group = st.selectbox("나이대", AGE_GROUPS, index=1, key="signup_age_group")
-            neighborhood = st.selectbox("사는 동네", _dong_names, index=0,
-                                        key="signup_neighborhood")
-            st.markdown("---")
-            agree_privacy = st.checkbox("(필수) 개인정보 활용 동의", key="signup_agree_privacy")
-            agree_location = st.checkbox("(필수) 위치기반 서비스 이용 동의",
-                                         key="signup_agree_location")
-            submitted = st.form_submit_button("가입하고 시작하기", type="primary",
-                                              use_container_width=True)
+        nickname = st.text_input("닉네임", placeholder="닉네임", key="signup_nickname")
+        password = st.text_input("비밀번호", type="password",
+                                 placeholder="비밀번호", key="signup_pw")
+        age_group = st.selectbox("나이대", AGE_GROUPS, index=1, key="signup_age_group")
+
+        st.markdown("**사는 곳**")
+        rc1, rc2 = st.columns(2)
+        city = rc1.selectbox("시", cities, index=default_city_idx, key="signup_city")
+        dong_options = SIGNUP_REGIONS.get(city, [])
+        # 시가 바뀌어 기존 동 선택이 새 목록에 없으면 첫 번째 동으로 초기화(옵션 에러 방지)
+        if dong_options and st.session_state.get("signup_dong") not in dong_options:
+            st.session_state["signup_dong"] = dong_options[0]
+        dong = rc2.selectbox("동", dong_options, key="signup_dong")
+
+        st.markdown("---")
+        agree_privacy = st.checkbox("(필수) 개인정보 활용 동의", key="signup_agree_privacy")
+        agree_location = st.checkbox("(필수) 위치기반 서비스 이용 동의",
+                                     key="signup_agree_location")
+        submitted = st.button("가입하고 시작하기", type="primary",
+                              use_container_width=True, key="signup_submit")
         back = st.button("← 뒤로", key="signup_back", use_container_width=True)
 
     if back:
@@ -2014,7 +2039,8 @@ def render_signup() -> None:
         else:
             st.session_state.user_name = nickname.strip()
             st.session_state.user_age_group = age_group
-            st.session_state.user_neighborhood = neighborhood
+            st.session_state.user_city = city
+            st.session_state.user_neighborhood = f"{city} {dong}".strip()
             st.session_state.logged_in = True
             st.session_state.consent = True
             st.session_state.location_consent = True
