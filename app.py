@@ -529,16 +529,18 @@ def map_data_uri(size: int = 720) -> str | None:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-# 마스터 티어 달성 보상(코스맥스 3WAAU 본품) 이미지. '3WAAU.*' 파일을 우선 찾는다.
-# 파일이 없으면 이미지 없이 텍스트 카드로만 표시된다 (다른 이미지들과 동일한 폴백 방식).
+# 마스터 티어 달성 보상(코스맥스 3WAAU 본품) 이미지. '3WAUU_2.*'를 우선 찾고,
+# 없으면 기존 '3WAAU.*'로 폴백한다 (다른 이미지들과 동일한 폴백 방식).
 _GIFT_CANDIDATES = [
+    "3WAUU_2.png", "3WAUU_2.jpg", "3WAUU_2.jpeg", "3WAUU_2.webp",
+    "3wauu_2.png", "3wauu_2.jpg", "3wauu_2.jpeg", "3wauu_2.webp",
     "3WAAU.png", "3WAAU.jpg", "3WAAU.jpeg", "3WAAU.webp",
     "3waau.png", "3waau.jpg", "3waau.jpeg", "3waau.webp",
 ]
 GIFT_PATH = next(
     (os.path.join(_BASE_DIR, n) for n in _GIFT_CANDIDATES
      if os.path.exists(os.path.join(_BASE_DIR, n))),
-    os.path.join(_BASE_DIR, "3WAAU.png"),
+    os.path.join(_BASE_DIR, "3WAUU_2.png"),
 )
 
 
@@ -1188,8 +1190,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .cl-rank__product { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
 .cl-rank__score { font-family: 'Space Grotesk', monospace; font-size: 16px; font-weight: 700; margin-right: 8px; }
-.cl-rank__gain { color: var(--accent); }
-.cl-rank__gain--down { color: #ff7b88; }
+/* 턴오버: 상승은 빨강(▲), 하락은 파랑(▼)으로 구분 */
+.cl-rank__gain { color: #ff5a6a; }
+.cl-rank__gain--down { color: #4d9bff; }
+/* 점수 랭킹 우측 = 점수 + 그 아래 작은 턴오버 배지 (상위권도 상승/하락 표시) */
+.cl-rank__scorecol { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.cl-rank__gain--mini { font-size: 11.5px; }
 /* 랭킹 탭 */
 .stApp [data-baseweb="tab-list"] { gap: 6px; background: transparent; }
 .stApp [data-baseweb="tab"] { font-weight: 700; }
@@ -1400,7 +1406,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
   box-shadow: 0 10px 30px rgba(67,211,176,0.18); }
 .cl-gift__img { width: 90px; height: 90px; object-fit: contain; border-radius: 14px;
   background: #f6f4ef; padding: 6px; flex-shrink: 0; }
-.cl-gift--locked .cl-gift__img { filter: grayscale(0.55) brightness(0.92); opacity: 0.7; }
+/* 상품 사진은 티어와 상관없이 항상 또렷하게 보여준다 (잠금 상태에서도 흐리게 하지 않음) */
 .cl-gift__img--ph { display: flex; align-items: center; justify-content: center;
   font-size: 42px; background: var(--accent-dim); }
 .cl-gift__body { min-width: 0; flex: 1; }
@@ -2382,7 +2388,13 @@ def build_ranking_board() -> list[dict]:
     기록의 이름은 모두 닉네임으로, product는 실제 제품명으로 정규화해서 노출한다."""
     records = load_records()
     my_id = st.session_state.get("my_record_id")
-    board = [dict(x) for x in MOCK_RANKING]
+    # 목업 이웃들도 이름 해시 기반 턴오버(-9~+18)를 배정해, 점수 상위권에도
+    # 상승·하락이 섞여 보이게 한다 (하드코딩된 gain을 표시용 값으로 덮어씀).
+    board = []
+    for x in MOCK_RANKING:
+        e = dict(x)
+        e["gain"] = display_turnover(x["name"])
+        board.append(e)
     # 이미 쓰인 닉네임(목업 포함)을 추적해 중복 없이 배정한다.
     used = {x["name"] for x in MOCK_RANKING}
     # id 순(안정적)으로 배정 → 새 기록이 추가돼도 기존 닉네임이 바뀌지 않는다.
@@ -2421,12 +2433,14 @@ def my_score_rank(board: list[dict]) -> tuple[int | None, int]:
     return rank, len(ranked)
 
 
-def gain_badge_html(gain: int) -> str:
-    """턴오버 상승/하락 배지 HTML. 양수는 민트 ▲, 음수는 붉은 ▼로 표기한다."""
+def gain_badge_html(gain: int, mini: bool = False) -> str:
+    """턴오버 상승/하락 배지 HTML. 상승은 빨강 ▲, 하락은 파랑 ▼로 표기한다.
+    mini=True면 점수 옆에 붙는 작은 배지(상위권 랭킹용)로 렌더링한다."""
     g = int(gain or 0)
-    if g < 0:
-        return f'<div class="cl-rank__score cl-rank__gain cl-rank__gain--down">▼{abs(g)}</div>'
-    return f'<div class="cl-rank__score cl-rank__gain">▲{g}</div>'
+    mini_cls = " cl-rank__gain--mini" if mini else ""
+    arrow, down = ("▼", " cl-rank__gain--down") if g < 0 else ("▲", "")
+    return (f'<div class="cl-rank__score cl-rank__gain{down}{mini_cls}">'
+            f'{arrow}{abs(g)}</div>')
 
 
 def weekly_gain(entry: dict) -> int:
@@ -2490,16 +2504,19 @@ def render_ranking() -> None:
         sub_score, sub_gain = st.tabs(["🏆 점수순", "📈 턴오버순"])
 
         with sub_score:
-            st.caption("현재 피부 점수가 높은 순이에요.")
+            st.caption("현재 피부 점수가 높은 순이에요. (점수 아래 ▲빨강 상승 · ▼파랑 하락)")
             if not view:
                 st.caption("이 나이대에는 아직 기록이 없어요.")
             score_sorted = sorted(view, key=lambda x: x["score"], reverse=True)
             show_all_score = st.session_state.get("rank_show_all_score", False)
             visible_count = len(score_sorted) if show_all_score else 10
             for rank, entry in enumerate(score_sorted[:visible_count], start=1):
-                _person_row(rank, entry,
-                            f'<div class="cl-rank__score">{entry["score"]}</div>',
-                            key_prefix="score")
+                _person_row(
+                    rank, entry,
+                    f'<div class="cl-rank__scorecol">'
+                    f'<div class="cl-rank__score">{entry["score"]}</div>'
+                    f'{gain_badge_html(entry.get("gain", 0), mini=True)}</div>',
+                    key_prefix="score")
             # 10명 초과일 때만 토글 버튼 노출 (더보기 <-> 접기)
             if len(score_sorted) > 10:
                 if show_all_score:
@@ -2513,7 +2530,7 @@ def render_ranking() -> None:
                         st.rerun()
 
         with sub_gain:
-            st.caption("피부 턴오버 28일 동안의 점수 변화 순이에요. (▲ 상승 · ▼ 하락)")
+            st.caption("피부 턴오버 28일 동안의 점수 변화 순이에요. (▲빨강 상승 · ▼파랑 하락)")
             if not view:
                 st.caption("이 나이대에는 아직 기록이 없어요.")
             for rank, entry in enumerate(
