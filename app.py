@@ -46,11 +46,11 @@ RECORDS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skin_re
 MOCK_RANKING = [
     {"name": "서초동 피부왕자", "age_group": "20대", "skin_type": "복합성", "score": 91, "gain": 7, "product": "토리든 다이브인 저분자 히알루론산 세럼"},
     {"name": "상도동 도자기피부", "age_group": "30대", "skin_type": "수부지", "score": 87, "gain": 12, "product": "라로슈포제 에빠끌라 토너"},
-    {"name": "판교 물광남", "age_group": "20대", "skin_type": "건성", "score": 83, "gain": 5, "product": "라운드랩 자작나무 수분 크림"},
+    {"name": "판교 물광남", "age_group": "20대", "skin_type": "건성", "score": 83, "gain": -4, "product": "라운드랩 자작나무 수분 크림"},
     {"name": "해운대 꿀피부", "age_group": "30대", "skin_type": "지성", "score": 79, "gain": 15, "product": "파티온 노스카나인 트러블 세럼"},
-    {"name": "연남동 무결점", "age_group": "40대", "skin_type": "민감성", "score": 74, "gain": 9, "product": "에스트라 에이시카365 수분 진정 크림"},
+    {"name": "연남동 무결점", "age_group": "40대", "skin_type": "민감성", "score": 74, "gain": -2, "product": "에스트라 에이시카365 수분 진정 크림"},
     {"name": "성수동 광채남", "age_group": "10대", "skin_type": "지성", "score": 68, "gain": 18, "product": "닥터자르트 시카페어 토너"},
-    {"name": "잠실 트러블졸업", "age_group": "20대", "skin_type": "복합성", "score": 63, "gain": 3, "product": "라로슈포제 시카플라스트 밤 B5"},
+    {"name": "잠실 트러블졸업", "age_group": "20대", "skin_type": "복합성", "score": 63, "gain": -7, "product": "라로슈포제 시카플라스트 밤 B5"},
 ]
 
 # ---------------------------------------------------------------------------
@@ -520,6 +520,32 @@ def map_data_uri(size: int = 720) -> str | None:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+# 마스터 티어 달성 보상(코스맥스 3WAAU 본품) 이미지. '3WAAU.*' 파일을 우선 찾는다.
+# 파일이 없으면 이미지 없이 텍스트 카드로만 표시된다 (다른 이미지들과 동일한 폴백 방식).
+_GIFT_CANDIDATES = [
+    "3WAAU.png", "3WAAU.jpg", "3WAAU.jpeg", "3WAAU.webp",
+    "3waau.png", "3waau.jpg", "3waau.jpeg", "3waau.webp",
+]
+GIFT_PATH = next(
+    (os.path.join(_BASE_DIR, n) for n in _GIFT_CANDIDATES
+     if os.path.exists(os.path.join(_BASE_DIR, n))),
+    os.path.join(_BASE_DIR, "3WAAU.png"),
+)
+
+
+@st.cache_data(show_spinner=False)
+def reward_gift_data_uri(size: int = 640) -> str | None:
+    """마스터 보상 제품(3WAAU 본품) 이미지를 data URI로 반환. 없으면 None."""
+    try:
+        img = Image.open(GIFT_PATH).convert("RGBA")
+    except (OSError, FileNotFoundError):
+        return None
+    img.thumbnail((size, size), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 # ---------------------------------------------------------------------------
 # 지목 매치 - 닉네임 기반 피부점수 대결
 # ---------------------------------------------------------------------------
@@ -544,6 +570,11 @@ RANDOM_MATCH_NICKS = [
     "대구 무결점", "인천 피부요정", "청담 유리알", "노원 촉촉남", "분당 맑은피부",
     "성수 뽀송남", "잠실 반짝이", "판교 개발자피부", "제주 청정남",
 ]
+
+
+# 매치 리워드 - 시작하는 순간 사용되는 포인트 / 승리 시 지급되는 포인트
+MATCH_ENTRY_COST = 2
+MATCH_WIN_REWARD = 20
 
 
 def random_match_result(my_score: int) -> tuple[int, bool]:
@@ -1149,6 +1180,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
   white-space: nowrap; }
 .cl-rank__score { font-family: 'Space Grotesk', monospace; font-size: 16px; font-weight: 700; margin-right: 8px; }
 .cl-rank__gain { color: var(--accent); }
+.cl-rank__gain--down { color: #ff7b88; }
 /* 랭킹 탭 */
 .stApp [data-baseweb="tab-list"] { gap: 6px; background: transparent; }
 .stApp [data-baseweb="tab"] { font-weight: 700; }
@@ -1350,6 +1382,26 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .cl-hof-row--top2 .cl-hof-row__rank, .cl-hof-row--top3 .cl-hof-row__rank { font-size: 20px; }
 .cl-hof-row--top2 { border-color: rgba(94,234,212,0.4); }
 .cl-hof-row--top3 { border-color: rgba(94,234,212,0.25); }
+
+/* ---- 리워드: 마스터 달성 보상(코스맥스 3WAAU 본품 증정) ---- */
+.cl-gift { display: flex; align-items: center; gap: 14px; padding: 14px;
+  border-radius: 18px; border: 1px solid var(--glass-brd); background: var(--glass); margin-top: 4px; }
+.cl-gift--unlocked { border-color: rgba(67,211,176,0.55);
+  background: linear-gradient(135deg, rgba(67,211,176,0.16), rgba(94,234,212,0.05));
+  box-shadow: 0 10px 30px rgba(67,211,176,0.18); }
+.cl-gift__img { width: 90px; height: 90px; object-fit: contain; border-radius: 14px;
+  background: #f6f4ef; padding: 6px; flex-shrink: 0; }
+.cl-gift--locked .cl-gift__img { filter: grayscale(0.55) brightness(0.92); opacity: 0.7; }
+.cl-gift__img--ph { display: flex; align-items: center; justify-content: center;
+  font-size: 42px; background: var(--accent-dim); }
+.cl-gift__body { min-width: 0; flex: 1; }
+.cl-gift__badge { display: inline-block; font-size: 10.5px; font-weight: 800; letter-spacing: 0.3px;
+  color: var(--ink); background: var(--accent); padding: 3px 9px; border-radius: 999px; margin-bottom: 6px; }
+.cl-gift--locked .cl-gift__badge { background: rgba(255,255,255,0.1); color: var(--muted); }
+.cl-gift__title { font-size: 15.5px; font-weight: 800; letter-spacing: -0.3px; margin-bottom: 4px;
+  word-break: keep-all; }
+.cl-gift__desc { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.cl-gift__desc b { color: var(--accent); }
 
 /* ---- 커뮤니티 게시판 ---- */
 .cl-post { background: var(--glass); border: 1px solid var(--glass-brd); border-radius: 16px;
@@ -1572,8 +1624,14 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
 .cl-rec__name { font-size: 13.5px; font-weight: 700; }
 .cl-rec__reason { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
 
-/* ---- 스플래시 (로딩/로그인) - max 캐릭터 둥둥 + 픽셀 버블 ---- */
-.cl-splash { position: fixed; inset: 0; z-index: 2147483000; overflow: hidden;
+/* ---- 스플래시 (로딩/로그인) - max 캐릭터 둥둥 + 픽셀 버블 ----
+   전체 화면이 아니라 베젤(430px, 가운데 정렬) 안쪽에만 그려서
+   로딩/로그인 중에도 폰 화면처럼 보이는 민트 베젤이 그대로 보이게 한다. */
+.cl-splash { position: fixed; top: 0; bottom: 0;
+  left: max(0px, calc(50% - 215px)); right: max(0px, calc(50% - 215px));
+  z-index: 2147483000; overflow: hidden;
+  border: 4px solid var(--accent); border-radius: 40px;
+  box-shadow: 0 0 0 1px rgba(67, 211, 176, 0.35) inset, 0 0 26px 4px rgba(67, 211, 176, 0.45);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
   background: radial-gradient(700px 500px at 50% 35%, rgba(67,211,176,0.16), transparent 60%),
     linear-gradient(160deg, #0b1016, #0f1822); }
@@ -1644,6 +1702,12 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   box-shadow: none; border: 1px solid rgba(255,90,106,0.4); }
 .cl-match__draw { font-size: 16px; font-weight: 700; margin: 18px 0 6px; color: var(--muted); }
 
+/* 다이얼로그(개인정보 동의 등)가 베젤(430px) 폭을 넘지 않게 살짝 작게 맞춘다.
+   role="dialog"가 실제 팝업 패널이라 여기에 폭을 직접 건다. */
+div[role="dialog"] {
+  width: min(384px, calc(100vw - 52px)) !important;
+  max-width: min(384px, calc(100vw - 52px)) !important; }
+
 /* ---- 모바일 대응 ---- */
 @media (max-width: 480px) {
   /* 동의 팝업 등 다이얼로그 버튼이 좁은 화면에서 줄바꿈되지 않게 */
@@ -1662,6 +1726,10 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   .cl-hero__sub { font-size: 14px; }
   .cl-result__score { font-size: 52px; }
   .cl-countdown__dday { font-size: 42px; }
+  .cl-gift { gap: 11px; padding: 12px; }
+  .cl-gift__img { width: 76px; height: 76px; }
+  .cl-gift__title { font-size: 14.5px; }
+  .cl-gift__desc { font-size: 12px; }
   [class*="st-key-navbtn_"] .stButton > button p:nth-of-type(2) { font-size: 19px; }
   .st-key-chatwidget { right: 14px; bottom: 82px; }
   .st-key-chat_fab { width: 52px; }
@@ -1775,7 +1843,10 @@ def _logout() -> None:
     for k in ("logged_in", "consent", "location_consent", "pending_login",
               "my_record_id", "diag_stage", "diag_answers", "last_diagnosis",
               "reward_points", "last_reward_earned", "login_loading",
-              "agree_privacy", "agree_location"):
+              "agree_privacy", "agree_location", "signup_stage",
+              "signup_agree_privacy", "signup_agree_location",
+              "user_age_group", "user_neighborhood",
+              "match_stage", "match_opponent", "match_last_reward", "gift_claimed"):
         st.session_state.pop(k, None)
     _reset_survey_answers()
 
@@ -1818,14 +1889,14 @@ def render_login() -> None:
     if uri:
         st.markdown(
             f'<div class="cl-logo-wrap"><img class="cl-logo" src="{uri}" alt="clozkin"></div>'
-            '<p class="cl-badge-tag">SKINCARE, MANDATORY FOR MEN</p>',
+            '<p class="cl-badge-tag">SKINCARE, (WO)MANDATORY FOR MEN</p>',
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
             '<div class="cl-brand"><span class="cl-brand__dot"></span>'
             '<span class="cl-brand__name">clozkin</span></div>'
-            '<p class="cl-badge-tag">SKINCARE, MANDATORY FOR MEN</p>',
+            '<p class="cl-badge-tag">SKINCARE, (WO)MANDATORY FOR MEN</p>',
             unsafe_allow_html=True,
         )
     st.markdown(
@@ -1833,6 +1904,12 @@ def render_login() -> None:
         '<span class="cl-grad">이제 관리는 필수.</span></h1>',
         unsafe_allow_html=True,
     )
+
+    # 회원가입을 누르면 로그인 폼 대신 가입 정보 입력 화면을 보여준다.
+    if st.session_state.get("signup_stage"):
+        render_signup()
+        return
+
     with st.container(key="loginbox"):
         with st.form(key="login_form"):
             user_id = st.text_input("아이디", placeholder="아이디", key="login_id")
@@ -1857,14 +1934,66 @@ def render_login() -> None:
         st.session_state.login_loading = True  # 로그인 시 2초 max 캐릭터 로딩
         st.session_state.pop("pending_login", None)
         st.rerun()
-    elif signup or guest:
+    elif signup:
+        # 회원가입은 닉네임·비밀번호·나이대·사는동네를 입력받는 화면으로 이동
+        st.session_state.signup_stage = True
+        st.session_state.pop("consent", None)
+        st.rerun()
+    elif guest:
         st.session_state.user_name = (user_id or "").strip() or "게스트"
         st.session_state.pending_login = True
         st.session_state.pop("consent", None)
 
-    # 회원가입/비회원 선택 시에만 개인정보 동의 팝업 표시 (로그인은 팝업 없이 바로 입장)
+    # 비회원 시작 시에만 개인정보 동의 팝업 표시 (로그인은 팝업 없이 바로 입장)
     if st.session_state.get("pending_login"):
         consent_dialog()
+
+
+def render_signup() -> None:
+    """회원가입 화면 - 닉네임·비밀번호·나이대·사는동네 입력 + 필수 동의 후 바로 로그인."""
+    _dong_names = [d["name"] for d in MOCK_DONGS]
+    st.markdown('<div class="cl-sec">SIGN UP</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">회원가입</div>', unsafe_allow_html=True)
+    st.caption("몇 가지만 입력하면 바로 시작할 수 있어요. 맞춤 추천에 사용돼요.")
+
+    with st.container(key="signupbox"):
+        with st.form(key="signup_form"):
+            nickname = st.text_input("닉네임", placeholder="닉네임", key="signup_nickname")
+            password = st.text_input("비밀번호", type="password",
+                                     placeholder="비밀번호", key="signup_pw")
+            age_group = st.selectbox("나이대", AGE_GROUPS, index=1, key="signup_age_group")
+            neighborhood = st.selectbox("사는 동네", _dong_names, index=0,
+                                        key="signup_neighborhood")
+            st.markdown("---")
+            agree_privacy = st.checkbox("(필수) 개인정보 활용 동의", key="signup_agree_privacy")
+            agree_location = st.checkbox("(필수) 위치기반 서비스 이용 동의",
+                                         key="signup_agree_location")
+            submitted = st.form_submit_button("가입하고 시작하기", type="primary",
+                                              use_container_width=True)
+        back = st.button("← 뒤로", key="signup_back", use_container_width=True)
+
+    if back:
+        st.session_state.pop("signup_stage", None)
+        st.rerun()
+
+    if submitted:
+        if not (nickname or "").strip():
+            st.warning("닉네임을 입력해주세요.")
+        elif not (password or "").strip():
+            st.warning("비밀번호를 입력해주세요.")
+        elif not (agree_privacy and agree_location):
+            st.warning("개인정보·위치기반 서비스 이용에 모두 동의해야 가입할 수 있어요.")
+        else:
+            st.session_state.user_name = nickname.strip()
+            st.session_state.user_age_group = age_group
+            st.session_state.user_neighborhood = neighborhood
+            st.session_state.logged_in = True
+            st.session_state.consent = True
+            st.session_state.location_consent = True
+            st.session_state.login_loading = True  # 가입 직후 2초 max 캐릭터 로딩
+            st.session_state.pop("signup_stage", None)
+            st.session_state.pop("pending_login", None)
+            st.rerun()
 
 
 def section_title(title: str, tag: str) -> None:
@@ -2276,6 +2405,14 @@ def my_score_rank(board: list[dict]) -> tuple[int | None, int]:
     return rank, len(ranked)
 
 
+def gain_badge_html(gain: int) -> str:
+    """턴오버 상승/하락 배지 HTML. 양수는 민트 ▲, 음수는 붉은 ▼로 표기한다."""
+    g = int(gain or 0)
+    if g < 0:
+        return f'<div class="cl-rank__score cl-rank__gain cl-rank__gain--down">▼{abs(g)}</div>'
+    return f'<div class="cl-rank__score cl-rank__gain">▲{g}</div>'
+
+
 def weekly_gain(entry: dict) -> int:
     """'이번 주 급상승'용 주간 상승폭(결정적). 28일 상승폭(gain)에서 최근 7일 몫만
     이름 해시로 안정적으로 뽑아, 새로고침해도 같은 값이 나오게 한다."""
@@ -2360,13 +2497,12 @@ def render_ranking() -> None:
                         st.rerun()
 
         with sub_gain:
-            st.caption("피부 턴오버 28일 동안 점수가 많이 오른 순이에요. (▲ 상승폭)")
+            st.caption("피부 턴오버 28일 동안의 점수 변화 순이에요. (▲ 상승 · ▼ 하락)")
             if not view:
                 st.caption("이 나이대에는 아직 기록이 없어요.")
             for rank, entry in enumerate(
                     sorted(view, key=lambda x: x.get("gain", 0), reverse=True), start=1):
-                _person_row(rank, entry,
-                            f'<div class="cl-rank__score cl-rank__gain">▲{entry.get("gain", 0)}</div>',
+                _person_row(rank, entry, gain_badge_html(entry.get("gain", 0)),
                             key_prefix="gain")
 
     # === 탭 2) 주간 급상승 (최근 7일 상승폭) ===
@@ -2540,12 +2676,21 @@ def render_match_screen() -> None:
                 st.button("진단하러 가기", type="primary", use_container_width=True,
                           on_click=set_nav, args=("diagnose",), key="match_goto_diag")
                 return
+            # 매치를 시작하는 순간 리워드 포인트를 사용한다 (0 미만으로는 내려가지 않음).
+            st.session_state.reward_points = max(
+                0, st.session_state.get("reward_points", 0) - MATCH_ENTRY_COST)
+            st.session_state.match_last_reward = 0  # 이번 매치 승리 보상(결과 화면에서 채움)
             # 실제 기록을 찾지 않고, 어떤 닉네임이든 무작위로 승/패가 정해지는 상대를 만든다.
             my_score = int(my_diag.get("score", 0))
             opp_score, _ = random_match_result(my_score)
             st.session_state.match_opponent = {"nickname": target, "score": opp_score}
             st.session_state.match_stage = "fight"
             st.rerun()
+
+        cur_points = st.session_state.get("reward_points", 0)
+        st.caption(
+            f"⚔️ 대결을 시작하면 리워드 {MATCH_ENTRY_COST}P가 사용돼요 · "
+            f"이기면 {MATCH_WIN_REWARD}P 적립! (내 포인트 {cur_points:,}P)")
 
         with st.container(key="match_nickform"):
             with st.form(key="match_nickname_form"):
@@ -2573,6 +2718,16 @@ def render_match_screen() -> None:
             unsafe_allow_html=True,
         )
         time.sleep(0.9)
+        # 승리 시에만 리워드 지급. 이 전환(fight→result)은 매치당 한 번만 실행되므로
+        # 결과 화면이 여러 번 다시 그려져도 보상이 중복 적립되지 않는다.
+        my_s = int((my_diag or {}).get("score", 0))
+        opp_s = int((opponent or {}).get("score", 0))
+        if my_s > opp_s:
+            st.session_state.reward_points = (
+                st.session_state.get("reward_points", 0) + MATCH_WIN_REWARD)
+            st.session_state.match_last_reward = MATCH_WIN_REWARD
+        else:
+            st.session_state.match_last_reward = 0
         st.session_state.match_stage = "result"
         st.rerun()
         return
@@ -2617,9 +2772,19 @@ def render_match_screen() -> None:
             unsafe_allow_html=True,
         )
 
+    # 리워드 정산 안내 - 승리 보상(+) / 시작 시 사용된 포인트(-)
+    won_reward = st.session_state.get("match_last_reward", 0)
+    if won_reward:
+        st.success(f"🎁 승리 보상으로 리워드 {won_reward}P를 적립했어요! "
+                   f"(현재 {st.session_state.get('reward_points', 0):,}P)")
+    else:
+        st.caption(f"이번 대결에 리워드 {MATCH_ENTRY_COST}P를 사용했어요. "
+                   f"(현재 {st.session_state.get('reward_points', 0):,}P) 다음 판을 노려봐요!")
+
     if st.button("다시 대결하기", type="primary", use_container_width=True, key="match_retry"):
         st.session_state.match_stage = "intro"
         st.session_state.pop("match_opponent", None)
+        st.session_state.pop("match_last_reward", None)
         st.rerun()
 
 
@@ -2712,11 +2877,49 @@ def render_rewards_screen() -> None:
             unsafe_allow_html=True,
         )
 
+    # --- 마스터 달성 보상 (코스맥스 3WAAU 본품 증정) ---
+    master_min = REWARD_TIERS[-1]["min_points"]
+    st.markdown('<div class="cl-sec">MASTER REWARD</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cl-h">마스터 달성 보상</div>', unsafe_allow_html=True)
+
+    gift_uri = reward_gift_data_uri()
+    gift_img = (f'<img class="cl-gift__img" src="{gift_uri}" alt="3WAAU 본품">'
+                if gift_uri else '<div class="cl-gift__img cl-gift__img--ph">🧴</div>')
+
+    if points >= master_min:
+        st.markdown(
+            f'<div class="cl-gift cl-gift--unlocked">{gift_img}'
+            f'<div class="cl-gift__body">'
+            f'<div class="cl-gift__badge">🎉 마스터 달성</div>'
+            f'<div class="cl-gift__title">코스맥스 3WAAU 본품 증정</div>'
+            f'<div class="cl-gift__desc">마스터 티어 달성을 축하해요! 코스맥스가 만든 '
+            f'<b>3WAAU 맞춤 본품</b>을 드려요.</div></div></div>',
+            unsafe_allow_html=True,
+        )
+        if st.session_state.get("gift_claimed"):
+            st.success("본품 증정 신청이 접수됐어요! 등록된 주소로 배송돼요 🚚")
+        elif st.button("🎁 본품 증정 신청하기", type="primary",
+                       use_container_width=True, key="gift_claim"):
+            st.session_state.gift_claimed = True
+            st.balloons()
+            st.rerun()
+    else:
+        remain = master_min - points
+        st.markdown(
+            f'<div class="cl-gift cl-gift--locked">{gift_img}'
+            f'<div class="cl-gift__body">'
+            f'<div class="cl-gift__badge">🔒 마스터 전용</div>'
+            f'<div class="cl-gift__title">코스맥스 3WAAU 본품 증정</div>'
+            f'<div class="cl-gift__desc">마스터 티어({master_min:,}P) 달성 시 '
+            f'코스맥스 <b>3WAAU 본품</b>을 드려요. 앞으로 <b>{remain:,}P</b> 남았어요!'
+            f'</div></div></div>',
+            unsafe_allow_html=True,
+        )
+
     # --- 명예의 전당 (마스터 티어 전용) ---
     st.markdown('<div class="cl-sec">HALL OF FAME</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">명예의 전당</div>', unsafe_allow_html=True)
 
-    master_min = REWARD_TIERS[-1]["min_points"]
     if points < master_min:
         remain = master_min - points
         st.markdown(
@@ -3065,15 +3268,61 @@ SCRIPTED_ANSWERS = [
             "• 에스트라 에이시카365 수분 진정 크림"
         ),
     },
+    {
+        # 스킨·토너·에센스·로션 이름 차이가 헷갈릴 때
+        "keysets": [
+            ["스킨", "토너"], ["토너", "에센스"], ["에센스", "로션"],
+            ["스킨", "에센스"], ["스킨", "로션"], ["토너", "로션"],
+            ["스킨", "차이"], ["토너", "차이"], ["에센스", "차이"], ["로션", "차이"],
+        ],
+        "answer": (
+            "스킨, 토너, 에센스, 로션 이름이 헷갈려도 괜찮습니다.\n"
+            "초보자는 이렇게만 이해하면 됩니다.\n\n"
+            "• 토너/스킨: 세안 후 가볍게 정리\n"
+            "• 에센스/세럼: 기능성 집중\n"
+            "• 로션/크림: 보습\n"
+            "• 선크림: 자외선 차단\n\n"
+            "이름이 회사마다 달라서 복잡해 보이지만, 실제로는\n"
+            "닦고 → 보충하고 → 막아주는 구조라고 보면 쉽습니다."
+        ),
+    },
+    {
+        # 여자(여성) 화장품 써도 되는지
+        "keysets": [["여자", "화장품"], ["여성", "화장품"], ["여자화장품"], ["여성화장품"]],
+        "answer": "네. 피부에 맞으면 문제 없습니다.",
+    },
+    {
+        # 피부 관리 팁
+        "keysets": [
+            ["피부", "관리", "팁"], ["피부관리", "팁"], ["피부", "팁"],
+            ["관리", "팁"], ["피부관리", "방법"], ["피부", "관리", "방법"],
+        ],
+        "answer": (
+            "좋은 피부관리 = 세안 + 보습 + 선크림\n"
+            "• 남성용 여부보다 피부 타입이 중요\n"
+            "• 비싼 것보다 안 자극적이고 꾸준히 쓸 수 있는 것이 중요\n"
+            "• 처음부터 여러 개 사지 말고 2~3개로 시작"
+        ),
+    },
+    {
+        # PDRN 성분 관련
+        "keysets": [["pdrn"], ["피디알엔"]],
+        "answer": (
+            "PDRN은 피부 회복과 진정을 내세우는 성분으로, 쉽게 말해 DNA 조각 계열 원료입니다.\n"
+            "주로 연어 유래 성분으로 알려져 있고, 화장품이나 피부 시술 분야에서 자주 언급됩니다.\n"
+            "다만 바르는 화장품에서의 효과는 제한적일 수 있어서, 만능 재생 성분처럼 기대하는 건 "
+            "과장일 수 있습니다."
+        ),
+    },
 ]
 
 
 def scripted_reply(text: str) -> str | None:
     """사용자 질문이 정해진 스크립트 질문과 맞으면 max의 고정 답변을 반환, 아니면 None."""
-    norm = re.sub(r"[\s·,.?!]", "", text)
+    norm = re.sub(r"[\s·,.?!]", "", text).lower()
     for item in SCRIPTED_ANSWERS:
         for keyset in item["keysets"]:
-            if all(re.sub(r"[\s·,.?!]", "", k) in norm for k in keyset):
+            if all(re.sub(r"[\s·,.?!]", "", k).lower() in norm for k in keyset):
                 return item["answer"]
     return None
 
