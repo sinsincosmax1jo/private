@@ -1917,14 +1917,14 @@ def render_login() -> None:
     if uri:
         st.markdown(
             f'<div class="cl-logo-wrap"><img class="cl-logo" src="{uri}" alt="clozkin"></div>'
-            '<p class="cl-badge-tag">SKINCARE, (WO)MANDATORY FOR MEN</p>',
+            '<p class="cl-badge-tag">SKINCARE, (WO)MENDATORY FOR MEN</p>',
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
             '<div class="cl-brand"><span class="cl-brand__dot"></span>'
             '<span class="cl-brand__name">clozkin</span></div>'
-            '<p class="cl-badge-tag">SKINCARE, (WO)MANDATORY FOR MEN</p>',
+            '<p class="cl-badge-tag">SKINCARE, (WO)MENDATORY FOR MEN</p>',
             unsafe_allow_html=True,
         )
     st.markdown(
