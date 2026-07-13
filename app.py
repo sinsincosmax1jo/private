@@ -224,6 +224,15 @@ def random_age_group(seed_text: str) -> str:
     weighted = ["10대", "20대", "20대", "30대", "30대", "40대", "40대", "50대"]
     return weighted[seed % len(weighted)]
 
+
+def display_turnover(seed_text: str) -> int:
+    """랭킹 표시용 턴오버(28일 점수 변화) 값. 이름/ID 해시로 -9~+18 사이 값을
+    결정적으로 뽑아, 일부 사용자는 하락(-)으로도 나오게 한다.
+    (새로고침해도 같은 값이 나오도록 랜덤이 아닌 해시 기반으로 계산)"""
+    seed = sum(ord(c) for c in str(seed_text or "")) or 1
+    seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF  # 이름 순서와 무관하게 잘 섞이도록
+    return seed % 28 - 9  # -9 ~ +18
+
 # 구매 내역 - 목업 데이터 (남성용 화장품 / 여러 쇼핑몰)
 MOCK_PURCHASES = [
     {"site": "올리브영", "product": "라운드랩 자작나무 수분 크림", "date": "2026-06-28", "price": 19800},
@@ -2391,7 +2400,9 @@ def build_ranking_board() -> list[dict]:
             "age_group": age_group,
             "skin_type": r.get("skin_type"),
             "score": int(r.get("score", 0)),
-            "gain": int(r.get("gain", 0)),
+            # 내 기록은 실제 진단 상승폭을 그대로 쓰고, 그 외 이웃들은 해시 기반으로
+            # 상승·하락이 섞인 턴오버 값을 배정한다 (랭킹에 하락 사용자도 보이도록).
+            "gain": int(r.get("gain", 0)) if is_me else display_turnover(r.get("id", orig_name)),
             "product": real_product_for(orig_name, r.get("product")),
             "is_me": is_me,
         })
