@@ -2045,8 +2045,8 @@ def render_signup() -> None:
 
     with st.container(key="signupbox"):
         nickname = st.text_input("닉네임", placeholder="닉네임", key="signup_nickname")
-        password = st.text_input("비밀번호", type="password",
-                                 placeholder="비밀번호", key="signup_pw")
+        # 비밀번호 입력창은 그대로 보여주지만 데모라 값은 검증하지 않는다(아무 값이나 가입 가능).
+        st.text_input("비밀번호", type="password", placeholder="비밀번호", key="signup_pw")
         age_group = st.selectbox("나이대", AGE_GROUPS, index=1, key="signup_age_group")
 
         st.markdown("**사는 곳**")
@@ -2079,10 +2079,9 @@ def render_signup() -> None:
         st.rerun()
 
     if submitted:
+        # 비밀번호는 데모라 검증하지 않는다 - 아무 값(빈 값 포함)이어도 그대로 가입·로그인.
         if not (nickname or "").strip():
             st.warning("닉네임을 입력해주세요.")
-        elif not (password or "").strip():
-            st.warning("비밀번호를 입력해주세요.")
         elif not (agree_privacy and agree_location):
             st.warning("개인정보·위치기반 서비스 이용에 모두 동의해야 가입할 수 있어요.")
         else:
