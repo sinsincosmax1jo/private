@@ -1711,11 +1711,16 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
   box-shadow: none; border: 1px solid rgba(255,90,106,0.4); }
 .cl-match__draw { font-size: 16px; font-weight: 700; margin: 18px 0 6px; color: var(--muted); }
 
-/* 다이얼로그(개인정보 동의 등)가 베젤(430px) 폭을 넘지 않게 살짝 작게 맞춘다.
-   role="dialog"가 실제 팝업 패널이라 여기에 폭을 직접 건다. */
-div[role="dialog"] {
-  width: min(384px, calc(100vw - 52px)) !important;
-  max-width: min(384px, calc(100vw - 52px)) !important; }
+/* 다이얼로그(개인정보 동의 등)가 베젤(430px) 폭을 넘지 않게 강제로 줄인다.
+   Streamlit 기본 팝업은 min-width가 걸려 있어 폭이 안 줄어들 수 있으므로
+   실제 패널(baseweb modal-dialog / role=dialog)에 min-width까지 함께 푼다. */
+div[role="dialog"],
+[data-testid="stDialog"] div[role="dialog"],
+[data-testid="stDialog"] [data-baseweb="modal-dialog"],
+div[data-baseweb="modal-dialog"] {
+  width: min(340px, calc(100vw - 56px)) !important;
+  max-width: min(340px, calc(100vw - 56px)) !important;
+  min-width: 0 !important; }
 
 /* ---- 모바일 대응 ---- */
 @media (max-width: 480px) {
