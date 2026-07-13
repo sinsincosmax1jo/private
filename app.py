@@ -1718,15 +1718,23 @@ M150,248 C198,248 236,272 258,306 C278,338 288,380 294,432 L6,432 C12,380 22,338
 .cl-match__draw { font-size: 16px; font-weight: 700; margin: 18px 0 6px; color: var(--muted); }
 
 /* 다이얼로그(개인정보 동의 등)가 베젤(430px) 폭을 넘지 않게 강제로 줄인다.
-   Streamlit 기본 팝업은 min-width가 걸려 있어 폭이 안 줄어들 수 있으므로
-   실제 패널(baseweb modal-dialog / role=dialog)에 min-width까지 함께 푼다. */
-div[role="dialog"],
+   Streamlit 버전마다 실제 패널 요소(태그/속성)가 달라서, 후보가 되는 요소를
+   모두 지정하고 min-width 제한도 함께 푼다. margin:auto 를 넣어 어떤 구조
+   (flex 자식 / position:fixed inset:0 / 일반 블록)에서도 가운데 정렬이 유지되게 한다. */
+[data-testid="stDialog"],
+[data-testid="stDialog"] > div,
+[data-testid="stDialog"] > div > div,
 [data-testid="stDialog"] div[role="dialog"],
 [data-testid="stDialog"] [data-baseweb="modal-dialog"],
+[data-testid="stDialogContent"],
+div[role="dialog"],
 div[data-baseweb="modal-dialog"] {
-  width: min(340px, calc(100vw - 56px)) !important;
+  /* max-width 로 넓은 패널만 줄이고(중첩 요소 오버플로 없음),
+     Streamlit이 건 min-width(= max-width보다 우선)를 0으로 풀어 실제로 줄어들게 한다 */
   max-width: min(340px, calc(100vw - 56px)) !important;
-  min-width: 0 !important; }
+  min-width: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important; }
 
 /* ---- 모바일 대응 ---- */
 @media (max-width: 480px) {
