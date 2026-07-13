@@ -272,18 +272,59 @@ MOCK_DONGS = [
     {"name": "백현동", "count": 52},
 ]
 
-# 회원가입 지역 선택용 - 시 / 동 목록 (데모용 목업). 성남시는 위 랭킹 동네와 동일하게 맞춘다.
+# 회원가입 지역 선택용 - 도 / 시 / 동 3단계 목록 (데모용 목업).
+# 경기도 성남시의 동은 위 랭킹 동네와 동일하게 맞춘다.
 SIGNUP_REGIONS = {
-    "서울특별시": ["강남동", "서초동", "송파동", "마포동", "성수동", "여의도동", "잠실동", "상도동"],
-    "성남시": [d["name"] for d in MOCK_DONGS],
-    "수원시": ["영통동", "인계동", "권선동", "매탄동", "광교동"],
-    "용인시": ["수지동", "기흥동", "죽전동", "보정동"],
-    "고양시": ["일산동", "정발산동", "행신동", "화정동", "주엽동"],
-    "인천광역시": ["송도동", "청라동", "부평동", "구월동"],
-    "부산광역시": ["해운대동", "서면동", "광안동", "남천동"],
-    "대구광역시": ["수성동", "범어동", "동성로동"],
-    "대전광역시": ["둔산동", "유성동", "은행동"],
-    "광주광역시": ["상무동", "충장동", "첨단동"],
+    "경기도": {
+        "성남시": [d["name"] for d in MOCK_DONGS],
+        "수원시": ["영통동", "인계동", "권선동", "매탄동", "광교동"],
+        "용인시": ["수지동", "기흥동", "죽전동", "보정동"],
+        "고양시": ["일산동", "정발산동", "행신동", "화정동", "주엽동"],
+    },
+    "서울특별시": {
+        "강남구": ["역삼동", "삼성동", "청담동", "논현동"],
+        "서초구": ["서초동", "반포동", "방배동"],
+        "송파구": ["잠실동", "문정동", "가락동"],
+        "마포구": ["서교동", "합정동", "상암동"],
+    },
+    "인천광역시": {
+        "연수구": ["송도동", "청학동", "동춘동"],
+        "부평구": ["부평동", "산곡동", "삼산동"],
+        "남동구": ["구월동", "논현동", "간석동"],
+    },
+    "부산광역시": {
+        "해운대구": ["우동", "중동", "좌동"],
+        "부산진구": ["부전동", "전포동", "양정동"],
+        "수영구": ["광안동", "남천동", "민락동"],
+    },
+    "대구광역시": {
+        "수성구": ["범어동", "만촌동", "황금동"],
+        "중구": ["동인동", "삼덕동", "대봉동"],
+    },
+    "대전광역시": {
+        "서구": ["둔산동", "탄방동", "월평동"],
+        "유성구": ["봉명동", "지족동", "노은동"],
+    },
+    "광주광역시": {
+        "서구": ["치평동", "화정동", "농성동"],
+        "남구": ["봉선동", "주월동", "월산동"],
+    },
+    "강원특별자치도": {
+        "춘천시": ["석사동", "후평동", "퇴계동"],
+        "원주시": ["단계동", "무실동", "명륜동"],
+    },
+    "충청남도": {
+        "천안시": ["불당동", "쌍용동", "성정동"],
+        "아산시": ["온양동", "배방동", "탕정동"],
+    },
+    "경상남도": {
+        "창원시": ["상남동", "중앙동", "용호동"],
+        "김해시": ["내외동", "장유동", "삼계동"],
+    },
+    "제주특별자치도": {
+        "제주시": ["노형동", "연동", "이도동"],
+        "서귀포시": ["중문동", "대정동", "성산동"],
+    },
 }
 
 EVENT_LABELS = {
@@ -1887,8 +1928,8 @@ def _logout() -> None:
               "reward_points", "last_reward_earned", "login_loading",
               "agree_privacy", "agree_location", "signup_stage",
               "signup_agree_privacy", "signup_agree_location",
-              "signup_city", "signup_dong",
-              "user_age_group", "user_neighborhood", "user_city",
+              "signup_prov", "signup_city", "signup_dong",
+              "user_age_group", "user_neighborhood", "user_city", "user_province",
               "match_stage", "match_opponent", "match_last_reward", "gift_claimed"):
         st.session_state.pop(k, None)
     _reset_survey_answers()
@@ -1993,14 +2034,14 @@ def render_login() -> None:
 
 
 def render_signup() -> None:
-    """회원가입 화면 - 닉네임·비밀번호·나이대·사는곳(시/동) 입력 + 필수 동의 후 바로 로그인.
-    시를 바꾸면 동 목록이 즉시 갱신돼야 해서 st.form 대신 일반 위젯 + 버튼으로 구성한다."""
+    """회원가입 화면 - 닉네임·비밀번호·나이대·사는곳(도·특별시/시·구/동) 입력 + 필수 동의 후 로그인.
+    상위 지역을 바꾸면 하위 목록이 즉시 갱신돼야 해서 st.form 대신 일반 위젯 + 버튼으로 구성한다."""
     st.markdown('<div class="cl-sec">SIGN UP</div>', unsafe_allow_html=True)
     st.markdown('<div class="cl-h">회원가입</div>', unsafe_allow_html=True)
     st.caption("몇 가지만 입력하면 바로 시작할 수 있어요. 맞춤 추천에 사용돼요.")
 
-    cities = list(SIGNUP_REGIONS.keys())
-    default_city_idx = cities.index("성남시") if "성남시" in cities else 0
+    provinces = list(SIGNUP_REGIONS.keys())
+    default_prov_idx = provinces.index("경기도") if "경기도" in provinces else 0
 
     with st.container(key="signupbox"):
         nickname = st.text_input("닉네임", placeholder="닉네임", key="signup_nickname")
@@ -2009,10 +2050,18 @@ def render_signup() -> None:
         age_group = st.selectbox("나이대", AGE_GROUPS, index=1, key="signup_age_group")
 
         st.markdown("**사는 곳**")
+        # 1단계: 도 / 특별시
+        province = st.selectbox("도 · 특별시", provinces, index=default_prov_idx,
+                                key="signup_prov")
+        # 2단계: 시 / 구 (상위 선택이 바뀌면 목록 갱신, 기존 선택이 없으면 첫 항목으로 초기화)
+        city_map = SIGNUP_REGIONS.get(province, {})
+        city_options = list(city_map.keys())
+        if city_options and st.session_state.get("signup_city") not in city_options:
+            st.session_state["signup_city"] = city_options[0]
         rc1, rc2 = st.columns(2)
-        city = rc1.selectbox("시", cities, index=default_city_idx, key="signup_city")
-        dong_options = SIGNUP_REGIONS.get(city, [])
-        # 시가 바뀌어 기존 동 선택이 새 목록에 없으면 첫 번째 동으로 초기화(옵션 에러 방지)
+        city = rc1.selectbox("시 · 구", city_options, key="signup_city")
+        # 3단계: 동
+        dong_options = city_map.get(city, [])
         if dong_options and st.session_state.get("signup_dong") not in dong_options:
             st.session_state["signup_dong"] = dong_options[0]
         dong = rc2.selectbox("동", dong_options, key="signup_dong")
@@ -2039,8 +2088,9 @@ def render_signup() -> None:
         else:
             st.session_state.user_name = nickname.strip()
             st.session_state.user_age_group = age_group
+            st.session_state.user_province = province
             st.session_state.user_city = city
-            st.session_state.user_neighborhood = f"{city} {dong}".strip()
+            st.session_state.user_neighborhood = f"{province} {city} {dong}".strip()
             st.session_state.logged_in = True
             st.session_state.consent = True
             st.session_state.location_consent = True
